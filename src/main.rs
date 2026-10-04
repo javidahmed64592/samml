@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     let (manifest_path, command) = match args.len() {
         2 => (PathBuf::from("app-manifest.json"), args[1].clone()),
         3 => (PathBuf::from(&args[1]), args[2].clone()),
-        _ => bail!("usage: samml [app-manifest.json] <deploy|launch|run>"),
+        _ => bail!("usage: samml [app-manifest.json] <deploy|launch|run|clean>"),
     };
 
     let app = manifest::load_app_manifest(&manifest_path)?;
@@ -31,6 +31,10 @@ fn main() -> Result<()> {
         "run" => {
             deploy(&app)?;
             launch(&app)?;
+        }
+        "clean" => {
+            deploy::clean(&app)?;
+            println!("Restored to vanilla.");
         }
         other => bail!("unknown command: {other}"),
     }

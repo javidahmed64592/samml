@@ -51,7 +51,8 @@ The trailing slash convention mirrors `rsync`:
 
 ### Deploying CLEO + Modloader
 
-The below examples show how to deploy `CLEO 5.4.0` and `modloader`.
+The below examples show how to deploy `CLEO 5.4.0` and `modloader` (use your preferred CLEO version).
+The manifest entries for these **must come first** in the `app-manifest.json` file to ensure that the necessary directories are created before deploying other mods.
 First, add these two mods to the staging directory so you have the following structure:
 
 ```
