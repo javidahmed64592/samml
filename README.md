@@ -41,6 +41,14 @@ The manifests are JSON objects that define the deployment paths for your mods wi
 The mods will get deployed to the `modloader` directory by default if the `files` array is omitted.
 However, some mods require files to be deployed to specific locations within the game directory so this can be specified in the manifest files using the `files` array.
 
+### Trailing Slash Convention
+
+The trailing slash convention mirrors `rsync`:
+- `source` ends with '/'  => deploy the CONTENTS of that directory, merging them into `target` (the directory itself is not recreated).
+- `source` has no trailing slash => deploy the item itself (file or whole directory) as a unit.
+- `target` ends with '/'  => place the item INSIDE that directory, keeping the source's own name.
+- `target` has no trailing slash => the item is placed at that EXACT path (i.e. may rename it).
+
 ### Deploying CLEO + Modloader
 
 The below examples show how to deploy `CLEO 5.4.0` and `modloader`.
