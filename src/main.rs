@@ -26,19 +26,21 @@ fn main() -> Result<()> {
     }
 
     match command.as_str() {
-        "deploy" => {
-            deploy::deploy(&app)?;
-            println!("Deployed.");
-        }
+        "deploy" => deploy(&app)?,
         "launch" => launch(&app)?,
         "run" => {
-            deploy::deploy(&app)?;
-            println!("Deployed.");
+            deploy(&app)?;
             launch(&app)?;
         }
         other => bail!("unknown command: {other}"),
     }
 
+    Ok(())
+}
+
+fn deploy(app: &manifest::AppManifest) -> Result<()> {
+    deploy::deploy(app)?;
+    println!("Deployed.");
     Ok(())
 }
 
