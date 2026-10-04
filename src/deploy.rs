@@ -144,10 +144,6 @@ pub fn deploy(app: &AppManifest) -> Result<()> {
 
     teardown(game_dir)?;
 
-    // modloader/ itself is a real, persistent directory — only its
-    // children are ever symlinked/unlinked.
-    fs::create_dir_all(game_dir.join("modloader"))?;
-
     let mut created = Vec::new();
     for m in app.manifests.iter().filter(|m| m.active) {
         deploy_mod(m, staging_dir, game_dir, &mut created)
