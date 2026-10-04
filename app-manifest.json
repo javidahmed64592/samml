@@ -16,10 +16,13 @@
       ]
     },
     {
-      "name": "modloader",
+      "name": "Modloader",
       "mod_path": "system/modloader",
       "active": true,
-      "files": [{ "source": "modloader.asi", "target": "modloader.asi" }]
+      "files": [
+        { "source": "modloader", "target": "modloader" },
+        { "source": "modloader.asi", "target": "modloader.asi" }
+      ]
     }
   ]
 }
