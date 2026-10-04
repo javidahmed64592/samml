@@ -1,9 +1,10 @@
 [package]
-name = "template_rust"
+name = "samml"
 version = "0.1.0"
-description = "A template for creating Rust applications."
+description = "San Andreas Mod Manager for Linux players."
 edition = "2024"
-repository = "https://github.com/javidahmed64592/template-rust"
+repository = "https://github.com/javidahmed64592/samml"
+homepage = "https://github.com/javidahmed64592/samml"
 license = "MIT"
 authors = ["Javid Ahmed <javidahmed@icloud.com>"]
 
