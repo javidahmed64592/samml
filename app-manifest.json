@@ -1,0 +1,25 @@
+{
+  "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/",
+  "staging_dir": "/path/to/samml/staging/",
+  "steam_app_id": 12120,
+  "manifests": [
+    {
+      "name": "CLEO 5.4.0",
+      "mod_path": "system/cleo-5.4.0",
+      "active": true,
+      "files": [
+        { "source": "cleo", "target": "cleo" },
+        { "source": "CLEO.asi", "target": "CLEO.asi" },
+        { "source": "bass.dll", "target": "bass.dll" },
+        { "source": "vorbisFile.dll", "target": "vorbisFile.dll" },
+        { "source": "vorbisHooked.dll", "target": "vorbisHooked.dll" }
+      ]
+    },
+    {
+      "name": "modloader",
+      "mod_path": "system/modloader",
+      "active": true,
+      "files": [{ "source": "modloader.asi", "target": "modloader.asi" }]
+    }
+  ]
+}
