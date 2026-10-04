@@ -24,6 +24,7 @@ The app manifest is a JSON file named `app-manifest.json` that defines the game 
 {
   "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/", // This is ${GAME_DIR}
   "staging_dir": "/path/to/samml/staging/", // This is ${STAGING_DIR}
+  "steam_app_id": 12120,
   "manifests": [] // See below section for adding manifests
 }
 ```
@@ -56,6 +57,8 @@ ${STAGING_DIR}/
     │   └── vorbisHooked.dll
     └── modloader/
         ├── modloader/
+        │   ├── .data/
+        │   └── .profiles/
         └── modloader.asi
 ```
 
@@ -65,6 +68,8 @@ These need to get deployed to the game directory with the following structure:
 ${GAME_DIR}/
 ├── cleo/
 ├── modloader/
+│   ├── .data/
+│   └── .profiles/
 ├── CLEO.asi
 ├── bass.dll
 ├── modloader.asi
@@ -80,7 +85,7 @@ Update it to reflect your actual mod setup in the staging directory.
 #### Deploying directly to modloader/
 
 Adding new mods is similar to adding mods to the `modloader` directory.
-If you would like to deploy a mod directory to the `modloader` directory, simply place the mod directory within your staging directory and update the `app-manifest.json` file accordingly:
+For example, if you have a mod named "Mod 1" stored in `${STAGING_DIR}/mods/mod-1` and you would like this to be deployed to `${GAME_DIR}/modloader/mod-1`, include the following manifest entry in your `app-manifest.json` file:
 
 ```
 ${STAGING_DIR}/
@@ -89,6 +94,15 @@ ${STAGING_DIR}/
         ├── new-mod-files/
         └── new-mod.asi
 ```
+
+```
+${GAME_DIR}/
+└── modloader/
+    └── mod-1/
+        ├── new-mod-files/
+        └── new-mod.asi
+```
+
 
 ```json
 {
@@ -108,8 +122,6 @@ However, not all mods can be deployed directly to the `modloader` directory.
 Some mods require files to be placed in specific locations within the game directory.
 In such cases, you need to specify the `files` array in the manifest to define the source and target paths for each file.
 
-For example, if you have a mod that needs to deploy a script to the `cleo` directory, your staging structure might look like this:
-
 ```
 ${STAGING_DIR}/
 └── mods/
@@ -119,7 +131,12 @@ ${STAGING_DIR}/
         └── new-mod.asi
 ```
 
-And the corresponding manifest entry would be:
+```
+${GAME_DIR}/
+├── cleo/
+│   └── new-script.cs
+└── new-mod.asi
+```
 
 ```json
 {
@@ -138,6 +155,7 @@ And the corresponding manifest entry would be:
 ```
 
 Any file/folder not included in the `files` array will be ignored if the `files` array is specified.
+If an empty array is specified, no files from that mod will be deployed to the game directory.
 
 ## License
 
