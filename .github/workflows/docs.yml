@@ -1,0 +1,57 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  "pages": write
+  "id-token": write
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Get package name
+        id: get_package_name
+        run: echo "package_name=$(cargo pkgid | cut -d# -f2 | cut -d@ -f1)" >> $GITHUB_OUTPUT
+
+      - name: Build documentation
+        run: cargo doc --no-deps --release
+
+      - name: Add redirect index
+        run: echo '<meta http-equiv="refresh" content="0; url=./${{ steps.get_package_name.outputs.package_name }}/index.html">' > target/doc/index.html
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: docs
+          path: target/doc
+
+  publish-docs:
+    runs-on: ubuntu-latest
+    needs: build-docs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: docs
+          path: target/doc
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: target/doc
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v5

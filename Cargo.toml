@@ -1,0 +1,20 @@
+[package]
+name = "template_rust"
+version = "0.1.0"
+description = "A template for creating Rust applications."
+edition = "2024"
+repository = "https://github.com/javidahmed64592/template-rust"
+license = "MIT"
+authors = ["Javid Ahmed <javidahmed@icloud.com>"]
+
+[package.metadata.wix]
+upgrade-guid = "F907DF88-7AA9-4257-AD19-515DF69BAAC3"
+path-guid = "EF829ECD-A13B-4D95-8332-5847850B2EC3"
+license = false
+eula = false
+
+[dependencies]
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
