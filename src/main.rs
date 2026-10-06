@@ -9,10 +9,15 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     // samml [app-manifest.json] clean
-    // samml [app-manifest.json] <deploy|launch|run> <profile>
-    let (manifest_path, command, profile_name) = match args.len() {
-        2 if args[1] == "clean" => (PathBuf::from("app-manifest.json"), args[1].clone(), None),
-        3 if args[2] == "clean" => (PathBuf::from(&args[1]), args[2].clone(), None),
+    // samml [app-manifest.json] list
+    // samml [app-manifest.json] <deploy|launch|run> <profile-slug>
+    let (manifest_path, command, profile_slug) = match args.len() {
+        2 if args[1] == "clean" || args[1] == "list" => {
+            (PathBuf::from("app-manifest.json"), args[1].clone(), None)
+        }
+        3 if args[2] == "clean" || args[2] == "list" => {
+            (PathBuf::from(&args[1]), args[2].clone(), None)
+        }
         3 => (
             PathBuf::from("app-manifest.json"),
             args[1].clone(),
@@ -24,7 +29,7 @@ fn main() -> Result<()> {
             Some(args[3].clone()),
         ),
         _ => bail!(
-            "usage: samml [app-manifest.json] <deploy|launch|run> <profile>\n       samml [app-manifest.json] clean"
+            "usage: samml [app-manifest.json] <deploy|launch|run> <profile-slug>\n       samml [app-manifest.json] new <profile name>\n       samml [app-manifest.json] list\n       samml [app-manifest.json] clean"
         ),
     };
 
@@ -32,18 +37,20 @@ fn main() -> Result<()> {
 
     match command.as_str() {
         "deploy" | "launch" | "run" => {
-            let name = profile_name.as_deref().unwrap();
-            let profiles = manifest::list_profiles(&app.profiles_dir)?;
-            if !manifest::check_profile_exists(&profiles, name) {
-                bail!(
-                    "profile '{name}' not found in {}",
-                    app.profiles_dir.display()
-                );
-            }
-            let profile_path = app.profiles_dir.join(format!("{name}.json"));
-            let profile = manifest::load_profile(&profile_path)?;
+            let slug = profile_slug.as_deref().unwrap();
+            let profile =
+                manifest::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
+                    format!(
+                        "profile '{slug}' not found in {}",
+                        app.profiles_dir.display()
+                    )
+                })?;
 
-            println!("Profile '{}' — {} mod(s):", name, profile.manifests.len());
+            println!(
+                "Profile '{}' ({slug}) - {} mod(s):",
+                profile.name,
+                profile.manifests.len()
+            );
             for m in &profile.manifests {
                 println!(
                     "  [{}] {} ({})",
@@ -61,6 +68,22 @@ fn main() -> Result<()> {
                     launch(&app)?;
                 }
                 _ => unreachable!(),
+            }
+        }
+        "new" => {
+            let name = profile_slug
+                .as_deref()
+                .context("usage: samml [app-manifest.json] new <profile name>")?;
+            let (slug, path) = manifest::create_profile(&app.profiles_dir, name)?;
+            println!("Created profile '{name}' ({slug}) at {}", path.display());
+        }
+        "list" => {
+            let profiles = manifest::list_profiles(&app.profiles_dir)?;
+            if profiles.is_empty() {
+                println!("No profiles found in {}", app.profiles_dir.display());
+            }
+            for p in profiles {
+                println!("{} - {}", p.slug, p.name);
             }
         }
         "clean" => {
