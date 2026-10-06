@@ -15,21 +15,25 @@ In this guide, we will use the following variables for file paths:
 
 - `${GAME_DIR}`: The root directory of the Grand Theft Auto: San Andreas game installation. This directory should contain the game executable.
 - `${STAGING_DIR}`: Add your mods as separate directories within this staging area before deploying them to the game directory.
+- `${PROFILES_DIR}`: The directory where mod profiles for the mod manager are stored.
 
 ## App Manifest
 
-The app manifest is a JSON file named `app-manifest.json` that defines the game directory, staging directory, and the list of mod manifests.
+The app manifest is a JSON file named `app-manifest.json` that defines the game directory, staging directory, and the list of mod profiles.
 
 ```json
 {
-  "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/", // This is ${GAME_DIR}
-  "staging_dir": "/path/to/samml/staging/", // This is ${STAGING_DIR}
+  "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/",
+  "staging_dir": "/path/to/samml/staging/",
+  "profiles_dir": "/path/to/samml/profiles/",
   "steam_app_id": 12120,
-  "manifests": [] // See below section for adding manifests
 }
 ```
 
-## Manifest
+## Profiles
+
+A profile is a JSON file that defines the mods to be deployed for a specific mod setup.
+Each profile is stored in the `${PROFILES_DIR}` directory and contains an array of mod manifests.
 
 The manifests are JSON objects that define the deployment paths for your mods within the game directory.
 
@@ -86,15 +90,57 @@ ${GAME_DIR}/
 └── vorbisHooked.dll
 ```
 
-The included `app-manifest.json` file has manifest entries for this deployment.
-Update it to reflect your actual mod setup in the staging directory.
+This can be achieved by creating the following profile (e.g. `${PROFILES_DIR}/profile.json`).
+
+```json
+{
+  "name": "Default",
+  "manifests": [
+    {
+      "name": "CLEO 5.4.0",
+      "mod_path": "system/cleo-5.4.0",
+      "active": true,
+      "files": [
+        { "source": "cleo", "target": "cleo" },
+        { "source": "CLEO.asi", "target": "CLEO.asi" },
+        { "source": "bass.dll", "target": "bass.dll" },
+        { "source": "vorbisFile.dll", "target": "vorbisFile.dll" },
+        { "source": "vorbisHooked.dll", "target": "vorbisHooked.dll" }
+      ]
+    },
+    {
+      "name": "Modloader",
+      "mod_path": "system/modloader",
+      "active": true,
+      "files": [
+        { "source": "modloader", "target": "modloader" },
+        { "source": "modloader.asi", "target": "modloader.asi" }
+      ]
+    }
+  ]
+}
+```
 
 ### Adding New Mods
 
 #### Deploying directly to modloader/
 
 Adding new mods is similar to adding mods to the `modloader` directory.
-For example, if you have a mod named "Mod 1" stored in `${STAGING_DIR}/mods/mod-1` and you would like this to be deployed to `${GAME_DIR}/modloader/mod-1`, include the following manifest entry in your `app-manifest.json` file:
+For example, if you have a mod named "Mod 1" stored in `${STAGING_DIR}/mods/mod-1` and you would like this to be deployed to `${GAME_DIR}/modloader/mod-1`, include the following manifest entry in your profile:
+
+```json
+{
+  "manifests": [
+    {
+      "name": "Mod 1",
+      "mod_path": "mods/mod-1",
+      "active": true
+    }
+  ]
+}
+```
+
+The resulting directory structure will look like this:
 
 ```
 ${STAGING_DIR}/
@@ -112,24 +158,30 @@ ${GAME_DIR}/
         └── new-mod.asi
 ```
 
-
-```json
-{
-  "manifests": [
-    {
-      "name": "Mod 1",
-      "mod_path": "mods/mod-1",
-      "active": true
-    }
-  ]
-}
-```
-
 #### Deploying to specific game directories
 
 However, not all mods can be deployed directly to the `modloader` directory.
 Some mods require files to be placed in specific locations within the game directory.
 In such cases, you need to specify the `files` array in the manifest to define the source and target paths for each file.
+
+```json
+{
+  "manifests": [
+    {
+      "name": "Mod 2",
+      "mod_path": "mods/mod-2",
+      "active": true,
+      "files": [
+        { "source": "data/", "target": "data/" },
+        { "source": "cleo/new-script.cs", "target": "cleo/new-script.cs" },
+        { "source": "new-mod.asi", "target": "new-mod.asi" }
+      ]
+    }
+  ]
+}
+```
+
+The resulting directory structure for this mod will look like this:
 
 ```
 ${STAGING_DIR}/
@@ -145,22 +197,6 @@ ${GAME_DIR}/
 ├── cleo/
 │   └── new-script.cs
 └── new-mod.asi
-```
-
-```json
-{
-  "manifests": [
-    {
-      "name": "Mod 2",
-      "mod_path": "mods/mod-2",
-      "active": true,
-      "files": [
-        { "source": "cleo/new-script.cs", "target": "cleo/new-script.cs" },
-        { "source": "new-mod.asi", "target": "new-mod.asi" }
-      ]
-    }
-  ]
-}
 ```
 
 Any file/folder not included in the `files` array will be ignored if the `files` array is specified.
