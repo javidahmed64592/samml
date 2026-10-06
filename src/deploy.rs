@@ -178,14 +178,14 @@ fn deploy_mod(
 /// Deploy every active manifest, in array order. Symlinks straight from
 /// STAGING_DIR into GAME_DIR; nothing is copied. Any stock file a mod
 /// overwrites is backed up first and restored on the next teardown.
-pub fn deploy(app: &AppManifest) -> Result<()> {
+pub fn deploy(app: &AppManifest, mods: &[ModManifest]) -> Result<()> {
     let game_dir = &app.game_dir;
     let staging_dir = &app.staging_dir;
 
     teardown(game_dir)?;
 
     let mut created = Vec::new();
-    for m in app.manifests.iter().filter(|m| m.active) {
+    for m in mods.iter().filter(|m| m.active) {
         deploy_mod(m, staging_dir, game_dir, &mut created)
             .with_context(|| format!("deploying mod '{}'", m.name))?;
     }

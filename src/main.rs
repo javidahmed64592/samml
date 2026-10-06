@@ -7,30 +7,61 @@ use std::process::Command;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let (manifest_path, command) = match args.len() {
-        2 => (PathBuf::from("app-manifest.json"), args[1].clone()),
-        3 => (PathBuf::from(&args[1]), args[2].clone()),
-        _ => bail!("usage: samml [app-manifest.json] <deploy|launch|run|clean>"),
+
+    // samml [app-manifest.json] clean
+    // samml [app-manifest.json] <deploy|launch|run> <profile>
+    let (manifest_path, command, profile_name) = match args.len() {
+        2 if args[1] == "clean" => (PathBuf::from("app-manifest.json"), args[1].clone(), None),
+        3 if args[2] == "clean" => (PathBuf::from(&args[1]), args[2].clone(), None),
+        3 => (
+            PathBuf::from("app-manifest.json"),
+            args[1].clone(),
+            Some(args[2].clone()),
+        ),
+        4 => (
+            PathBuf::from(&args[1]),
+            args[2].clone(),
+            Some(args[3].clone()),
+        ),
+        _ => bail!(
+            "usage: samml [app-manifest.json] <deploy|launch|run> <profile>\n       samml [app-manifest.json] clean"
+        ),
     };
 
     let app = manifest::load_app_manifest(&manifest_path)?;
 
-    println!("{} mod(s) in app manifest:", app.manifests.len());
-    for m in &app.manifests {
-        println!(
-            "  [{}] {} ({})",
-            if m.active { "x" } else { " " },
-            m.name,
-            m.mod_path
-        );
-    }
-
     match command.as_str() {
-        "deploy" => deploy(&app)?,
-        "launch" => launch(&app)?,
-        "run" => {
-            deploy(&app)?;
-            launch(&app)?;
+        "deploy" | "launch" | "run" => {
+            let name = profile_name.as_deref().unwrap();
+            let profiles = manifest::list_profiles(&app.profiles_dir)?;
+            if !manifest::check_profile_exists(&profiles, name) {
+                bail!(
+                    "profile '{name}' not found in {}",
+                    app.profiles_dir.display()
+                );
+            }
+            let profile_path = app.profiles_dir.join(format!("{name}.json"));
+            let profile = manifest::load_profile(&profile_path)?;
+
+            println!("Profile '{}' — {} mod(s):", name, profile.manifests.len());
+            for m in &profile.manifests {
+                println!(
+                    "  [{}] {} ({})",
+                    if m.active { "x" } else { " " },
+                    m.name,
+                    m.mod_path
+                );
+            }
+
+            match command.as_str() {
+                "deploy" => deploy(&app, &profile.manifests)?,
+                "launch" => launch(&app)?,
+                "run" => {
+                    deploy(&app, &profile.manifests)?;
+                    launch(&app)?;
+                }
+                _ => unreachable!(),
+            }
         }
         "clean" => {
             deploy::clean(&app)?;
@@ -42,8 +73,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppManifest) -> Result<()> {
-    deploy::deploy(app)?;
+fn deploy(app: &manifest::AppManifest, mods: &[manifest::ModManifest]) -> Result<()> {
+    deploy::deploy(app, mods)?;
     println!("Deployed.");
     Ok(())
 }
