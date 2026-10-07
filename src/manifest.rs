@@ -29,21 +29,12 @@ pub struct AppManifest {
     pub steam_app_id: Option<u32>,
 }
 
-/// `name` is the only source of truth for display - free text, any
-/// characters. The file it's stored under is a separate, filesystem-safe
-/// slug (see `slugify`/`create_profile`) and is never assumed to match
-/// `name` exactly, so renaming a profile later never requires a file
-/// rename.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
     pub manifests: Vec<ModManifest>,
 }
 
-/// A profile's on-disk identity (its filename stem, the slug) paired with
-/// its canonical display name read from inside the file. Returned by
-/// `list_profiles` so a UI can show `name` while using `slug` as the
-/// stable handle for lookups.
 #[derive(Debug, Clone)]
 pub struct ProfileInfo {
     pub slug: String,
