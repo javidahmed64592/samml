@@ -189,6 +189,8 @@ ${STAGING_DIR}/
     └── mod-2/
         ├── cleo/
         │   └── new-script.cs
+        ├── data/
+        │   └── file.dat
         └── new-mod.asi
 ```
 
@@ -196,6 +198,9 @@ ${STAGING_DIR}/
 ${GAME_DIR}/
 ├── cleo/
 │   └── new-script.cs
+├── data/
+│   ├── ...
+│   └── file.dat
 └── new-mod.asi
 ```
 
