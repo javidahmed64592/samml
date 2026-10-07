@@ -22,13 +22,23 @@ fn backup_path_for(game_dir: &Path, rel: &str) -> PathBuf {
 /// file/folder that was backed up to make room for it. We never touch
 /// anything that isn't either one of our own symlinks or one of our own
 /// backups.
+///
+/// Processed in REVERSE of creation order. Some entries are themselves a
+/// directory deployed as a single symlink (e.g. the `modloader` or `cleo`
+/// system mod's folder) with other mods' entries placed as children
+/// *inside* that symlink - meaning those children actually live inside
+/// STAGING_DIR, reached only by resolving through the container symlink.
+/// Removing the container first would sever that path and orphan its
+/// children in the staging tree with no way left to find them. Since a
+/// container symlink is always created before anything is placed inside
+/// it, undoing in reverse order guarantees children are removed first.
 fn teardown(game_dir: &Path) -> Result<()> {
     let receipt_path = game_dir.join(RECEIPT_FILE);
     if !receipt_path.exists() {
         return Ok(());
     }
     let receipt: Receipt = serde_json::from_str(&fs::read_to_string(&receipt_path)?)?;
-    for rel in &receipt.links {
+    for rel in receipt.links.iter().rev() {
         let path = game_dir.join(rel);
         if path.is_symlink() {
             fs::remove_file(&path)
@@ -164,7 +174,7 @@ fn deploy_mod(
             if !modloader_dir.exists() {
                 bail!(
                     "{}: modloader/ does not exist yet - deploy the manifest entry that \
-                     creates it (e.g. a 'modloader' mod) earlier in app-manifest.json",
+                     creates it (e.g. a 'modloader' mod) earlier in the profile",
                     m.name
                 );
             }
