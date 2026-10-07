@@ -2,6 +2,7 @@ use crate::manifest::{AppManifest, ModManifest};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::ErrorKind;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
@@ -12,32 +13,70 @@ const BACKUP_DIR: &str = ".samml_backups";
 struct Receipt {
     /// Every symlink path (relative to GAME_DIR) this tool created.
     links: Vec<String>,
+    /// Every directory (relative to GAME_DIR) this tool had to create to
+    /// make room for a symlink, that did NOT already exist beforehand.
+    /// Deepest-first, matching creation order.
+    #[serde(default)]
+    created_dirs: Vec<String>,
 }
 
 fn backup_path_for(game_dir: &Path, rel: &str) -> PathBuf {
     game_dir.join(BACKUP_DIR).join(rel)
 }
 
+/// `fs::create_dir_all`, but recording every ancestor directory that didn't
+/// already exist (deepest first) into `created_dirs`, so teardown can
+/// remove exactly those later - never a directory that was already there
+/// before we touched anything (e.g. the game's own `data/` folder).
+fn create_dir_all_tracked(
+    path: &Path,
+    game_dir: &Path,
+    created_dirs: &mut Vec<String>,
+) -> Result<()> {
+    let mut missing = Vec::new();
+    let mut cur = path;
+    while !cur.exists() {
+        missing.push(cur.to_path_buf());
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => break,
+        }
+    }
+    fs::create_dir_all(path).with_context(|| format!("creating {}", path.display()))?;
+    for p in missing {
+        let rel = p
+            .strip_prefix(game_dir)
+            .unwrap_or(&p)
+            .to_string_lossy()
+            .to_string();
+        created_dirs.push(rel);
+    }
+    Ok(())
+}
+
 /// Remove every symlink listed in the last receipt, then restore any stock
-/// file/folder that was backed up to make room for it. We never touch
-/// anything that isn't either one of our own symlinks or one of our own
-/// backups.
+/// file/folder that was backed up to make room for it, then remove any
+/// directory we created that's now empty. We never touch anything that
+/// isn't either one of our own symlinks, one of our own backups, or one of
+/// our own (now-empty) directories.
 ///
-/// Processed in REVERSE of creation order. Some entries are themselves a
-/// directory deployed as a single symlink (e.g. the `modloader` or `cleo`
-/// system mod's folder) with other mods' entries placed as children
-/// *inside* that symlink - meaning those children actually live inside
-/// STAGING_DIR, reached only by resolving through the container symlink.
-/// Removing the container first would sever that path and orphan its
-/// children in the staging tree with no way left to find them. Since a
-/// container symlink is always created before anything is placed inside
-/// it, undoing in reverse order guarantees children are removed first.
+/// Symlinks are processed in REVERSE of creation order. Some entries are
+/// themselves a directory deployed as a single symlink (e.g. the
+/// `modloader` or `cleo` system mod's folder) with other mods' entries
+/// placed as children *inside* that symlink - meaning those children
+/// actually live inside STAGING_DIR, reached only by resolving through the
+/// container symlink. Removing the container first would sever that path
+/// and orphan its children in the staging tree with no way left to find
+/// them. Since a container symlink is always created before anything is
+/// placed inside it, undoing in reverse order guarantees children are
+/// removed first.
 fn teardown(game_dir: &Path) -> Result<()> {
     let receipt_path = game_dir.join(RECEIPT_FILE);
     if !receipt_path.exists() {
         return Ok(());
     }
     let receipt: Receipt = serde_json::from_str(&fs::read_to_string(&receipt_path)?)?;
+
     for rel in receipt.links.iter().rev() {
         let path = game_dir.join(rel);
         if path.is_symlink() {
@@ -59,10 +98,33 @@ fn teardown(game_dir: &Path) -> Result<()> {
             })?;
         }
     }
+
+    // Deepest-first (matches creation order), so a now-empty child
+    // directory is gone before we try its now-maybe-empty parent.
+    for rel in &receipt.created_dirs {
+        let path = game_dir.join(rel);
+        if !path.is_dir() {
+            continue;
+        }
+        match fs::remove_dir(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) if e.kind() == ErrorKind::DirectoryNotEmpty => {
+                // Something else (another mod, the user, the game itself)
+                // put real content in here - leave it alone.
+            }
+            Err(e) => {
+                return Err(e).with_context(|| format!("removing directory {}", path.display()));
+            }
+        }
+    }
+
     Ok(())
 }
 
-/// Create `link_path -> target`, making sure parent directories exist.
+/// Create `link_path -> target`, making sure parent directories exist
+/// (tracked via `create_dir_all_tracked` so teardown can clean them back
+/// up if they end up empty).
 ///
 /// If something real (not one of our symlinks) already sits at
 /// `link_path` - e.g. a stock game file a mod wants to override - it gets
@@ -70,12 +132,18 @@ fn teardown(game_dir: &Path) -> Result<()> {
 /// can put it back later. We refuse to proceed if a backup already exists
 /// at that location, since that means a previous run left things in an
 /// inconsistent state and blindly overwriting could lose the real original.
-fn link(target: &Path, link_path: &Path, created: &mut Vec<String>, game_dir: &Path) -> Result<()> {
+fn link(
+    target: &Path,
+    link_path: &Path,
+    created: &mut Vec<String>,
+    created_dirs: &mut Vec<String>,
+    game_dir: &Path,
+) -> Result<()> {
     if !target.exists() {
         bail!("source does not exist: {}", target.display());
     }
     if let Some(parent) = link_path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+        create_dir_all_tracked(parent, game_dir, created_dirs)?;
     }
 
     let rel = link_path
@@ -153,6 +221,7 @@ fn deploy_mod(
     staging_dir: &Path,
     game_dir: &Path,
     created: &mut Vec<String>,
+    created_dirs: &mut Vec<String>,
 ) -> Result<()> {
     let mod_root = staging_dir.join(&m.mod_path);
     if !mod_root.is_dir() {
@@ -165,7 +234,7 @@ fn deploy_mod(
                 for (link_path, target_path) in
                     resolve_rule(&mod_root, game_dir, &rule.source, &rule.target)?
                 {
-                    link(&target_path, &link_path, created, game_dir)?;
+                    link(&target_path, &link_path, created, created_dirs, game_dir)?;
                 }
             }
         }
@@ -179,7 +248,7 @@ fn deploy_mod(
                 );
             }
             let link_path = modloader_dir.join(&m.name);
-            link(&mod_root, &link_path, created, game_dir)?;
+            link(&mod_root, &link_path, created, created_dirs, game_dir)?;
         }
     }
     Ok(())
@@ -195,12 +264,16 @@ pub fn deploy(app: &AppManifest, mods: &[ModManifest]) -> Result<()> {
     teardown(game_dir)?;
 
     let mut created = Vec::new();
+    let mut created_dirs = Vec::new();
     for m in mods.iter().filter(|m| m.active) {
-        deploy_mod(m, staging_dir, game_dir, &mut created)
+        deploy_mod(m, staging_dir, game_dir, &mut created, &mut created_dirs)
             .with_context(|| format!("deploying mod '{}'", m.name))?;
     }
 
-    let receipt = Receipt { links: created };
+    let receipt = Receipt {
+        links: created,
+        created_dirs,
+    };
     fs::write(
         game_dir.join(RECEIPT_FILE),
         serde_json::to_string_pretty(&receipt)?,
