@@ -1,9 +1,6 @@
-mod deploy;
-mod manifest;
-
 use anyhow::{Context, Result, bail};
+use samml_core::{deploy, launch, manifest};
 use std::path::PathBuf;
-use std::process::Command;
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -103,14 +100,10 @@ fn deploy(app: &manifest::AppManifest, mods: &[manifest::ModManifest]) -> Result
 }
 
 fn launch(app: &manifest::AppManifest) -> Result<()> {
-    let app_id = app
-        .steam_app_id
-        .context("steam_app_id is not set in app-manifest.json")?;
-    println!("Launching Steam App ID {app_id}...");
-    Command::new("steam")
-        .arg("-applaunch")
-        .arg(app_id.to_string())
-        .spawn()
-        .context("failed to run 'steam' - is it on PATH?")?;
+    launch::launch(app)?;
+    println!(
+        "Launched Steam App ID {}.",
+        app.steam_app_id.unwrap_or_default()
+    );
     Ok(())
 }
