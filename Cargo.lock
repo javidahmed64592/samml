@@ -43,6 +43,14 @@ name = "samml"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "samml-core",
+]
+
+[[package]]
+name = "samml-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "serde",
  "serde_json",
 ]

@@ -1,0 +1,13 @@
+[package]
+name = "samml"
+version.workspace = true
+description.workspace = true
+edition.workspace = true
+repository.workspace = true
+homepage.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+samml-core.workspace = true
