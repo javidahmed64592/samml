@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use samml_core::{deploy, launch, manifest};
+use samml_core::{config, deploy, launch, manifest, profiles};
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
@@ -30,13 +30,13 @@ fn main() -> Result<()> {
         ),
     };
 
-    let app = samml_core::load_app_manifest(&manifest_path)?;
+    let app = config::load_app_manifest(&manifest_path)?;
 
     match command.as_str() {
         "deploy" | "launch" | "run" => {
             let slug = profile_slug.as_deref().unwrap();
             let profile =
-                samml_core::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
+                profiles::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
                     format!(
                         "profile '{slug}' not found in {}",
                         app.profiles_dir.display()
@@ -71,11 +71,11 @@ fn main() -> Result<()> {
             let name = profile_slug
                 .as_deref()
                 .context("usage: samml [app_manifest.json] new <profile name>")?;
-            let (slug, path) = samml_core::create_profile(&app.profiles_dir, name)?;
+            let (slug, path) = profiles::create_profile(&app.profiles_dir, name)?;
             println!("Created profile '{name}' ({slug}) at {}", path.display());
         }
         "list" => {
-            let profiles = samml_core::list_profiles(&app.profiles_dir)?;
+            let profiles = profiles::list_profiles(&app.profiles_dir)?;
             if profiles.is_empty() {
                 println!("No profiles found in {}", app.profiles_dir.display());
             }

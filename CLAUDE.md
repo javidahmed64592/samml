@@ -12,8 +12,10 @@ The UI manages everything. Players never open mod folders, `app_manifest.json` o
 
 ```
 crates/samml-core/   all logic; no printing, no argument parsing
-  lib.rs             re-exports and the thin top-level API
+  lib.rs             module list only
   manifest.rs        serde data types only (no functions with side effects)
+  config.rs          load the app manifest
+  profiles.rs        profile files: list, create, save, rename, duplicate, delete
   deploy.rs          teardown / link / deploy (all-or-nothing) / clean
   receipt.rs         read/write/remove the deploy receipt
   launch.rs          launching the game through Steam
@@ -25,6 +27,7 @@ tests/               fixtures shared by tests (app_manifest.json, profiles/)
 
 ### Conventions
 
+- Slugs and any other UI-supplied names are validated before they touch a path.
 - Core never prints and never reads `std::env::args`; it returns data or `anyhow::Result`.
 - One concern per module. A module's top doc comment says what it owns and which modules it depends on. New logic goes in the module for that concern; do not grow `lib.rs`.
 - `manifest.rs` holds data types only. Types that cross the Tauri boundary derive `Serialize` and `Deserialize`.
@@ -81,7 +84,7 @@ tests/               fixtures shared by tests (app_manifest.json, profiles/)
 
 ### Phase A - core (tests, no UI)
 1. ~~Deploy rollback on failure; receipt records the deployed profile slug.~~ Done.
-2. Profile persistence: atomic `save_profile`; rename, duplicate, delete.
+2. ~~Profile persistence: atomic `save_profile`; rename, duplicate, delete.~~ Done (`profiles.rs`).
 3. Mod operations on a `Profile` (add, update, remove, move, set active) with name and path validation; mod folder ids.
 4. Mod storage: import files into a mod folder, list a mod's files, find which profiles use a mod, delete mod files (with removal from other profiles).
 5. `plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt.
