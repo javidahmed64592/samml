@@ -45,10 +45,24 @@ pub struct ProfileInfo {
 mod tests {
     use super::*;
 
+    const APP_MANIFEST: &str = include_str!("../../../app_manifest.json");
     const TEST_PROFILE: &str = include_str!("../../../tests/test_profile.json");
+
+    fn load_app_manifest() -> AppManifest {
+        serde_json::from_str(APP_MANIFEST).expect("app manifest should parse")
+    }
 
     fn load_profile() -> Profile {
         serde_json::from_str(TEST_PROFILE).expect("test profile should parse")
+    }
+
+    #[test]
+    fn parses_app_manifest() {
+        let manifest = load_app_manifest();
+        assert!(!manifest.game_dir.as_os_str().is_empty());
+        assert!(!manifest.staging_dir.as_os_str().is_empty());
+        assert!(!manifest.profiles_dir.as_os_str().is_empty());
+        assert_eq!(manifest.steam_app_id, Some(12120));
     }
 
     #[test]
