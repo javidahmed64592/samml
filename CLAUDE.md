@@ -52,10 +52,11 @@ tests/               fixtures shared by tests (app_manifest.json, profiles/)
 
 ## Decisions
 
-- **Immutable folder id**: each mod has an `id` (the `modloader/<id>` name). Mods added through the app also get a staging folder `mods/<id>`. The display name is freely editable and is never used as a path. Profiles without ids get them on load: the id is the old `name` when that is a valid folder name (so nothing moves in the game directory), otherwise a slug of it.
+- **Immutable folder id**: each mod has an `id`, its `modloader/<id>` folder. Modloader lists mods in game by folder name, so a new mod's id is its display name with only unsafe characters removed ("Cool Car Pack"), plus a number for duplicates ("Cool Car Pack 2"). Renaming a mod changes the display name only; the id stays, because modloader keys its own settings on the folder name (the UI should show the actual deploy folder). Mods added through the app are stored in staging at `mods/<slug>`; players never see that folder, so it uses a slug. Profiles without ids get them on load: the id is the old `name`, cleaned if needed, so nothing moves in the game directory.
 - **Removing a mod** removes it from the profile only, by default. The files stay in staging.
 - **Deleting a mod's files** is a separate, opt-in choice (a checkbox in the UI). The UI shows which other profiles use the mod. If the user deletes the files while other profiles use them, the mod is also removed from those profiles.
 - **Names** are unique within a profile (case-insensitive); ids are unique within a profile. All user-entered paths are validated: relative only, no `..`, no escaping STAGING_DIR or GAME_DIR. Deploy re-validates, so hand-edited profiles get the same checks.
+- **Possible later feature**: an explicit "rename folder too" action that re-links the mod and warns that modloader settings keyed on the folder name will reset.
 - **Rules**: an empty `files` list means the same as no list (deploy to `modloader`). A target of `./` means "inside the game folder".
 - **Importing** copies from native paths on the Rust side (Tauri dialog and drag-and-drop give paths), so file bytes never pass through the webview.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.

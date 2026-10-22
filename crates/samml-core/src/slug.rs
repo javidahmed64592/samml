@@ -33,10 +33,19 @@ pub fn slugify(name: &str) -> String {
 /// Returns `base`, or `base_2`, `base_3`, ... for the first one that
 /// `is_taken` does not report as taken.
 pub fn unique(base: &str, is_taken: impl Fn(&str) -> bool) -> String {
+    unique_with_separator(base, "_", is_taken)
+}
+
+/// Like `unique`, but joins the number with `separator` (e.g. `"Mod 2"`).
+pub fn unique_with_separator(
+    base: &str,
+    separator: &str,
+    is_taken: impl Fn(&str) -> bool,
+) -> String {
     let mut candidate = base.to_string();
     let mut n = 2;
     while is_taken(&candidate) {
-        candidate = format!("{base}_{n}");
+        candidate = format!("{base}{separator}{n}");
         n += 1;
     }
     candidate
@@ -62,5 +71,14 @@ mod tests {
     fn unique_appends_the_first_free_number() {
         let taken = ["a", "a_2", "a_3"];
         assert_eq!(unique("a", |c| taken.contains(&c)), "a_4");
+    }
+
+    #[test]
+    fn unique_with_separator_joins_with_it() {
+        let taken = ["Mod"];
+        assert_eq!(
+            unique_with_separator("Mod", " ", |c| taken.contains(&c)),
+            "Mod 2"
+        );
     }
 }

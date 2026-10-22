@@ -5,10 +5,14 @@
 //! profile (`profiles`), edit it here, then save it.
 //! Copying mod files into staging is `storage`'s job (a later step, `storage`).
 //!
-//! Every mod has an immutable `id`: a folder-safe name that is used as its
-//! `modloader/<id>` link name. The display `name` is free text and is never
-//! used as a path. Ids are unique within a profile; names are unique
-//! (case-insensitively) within a profile.
+//! Every mod has an immutable `id`: a cleaned-up copy of its name at the
+//! time it was added (e.g. "Cool Car Pack"), used as its `modloader/<id>`
+//! folder. Modloader lists mods in game by folder name, so ids stay readable
+//! rather than being slugs. Duplicates get a number ("Cool Car Pack 2").
+//! Renaming a mod later changes only the display `name`, not the id, because
+//! modloader keys its own settings on the folder name. The staging folder
+//! (`mods/<slug>`) is separate and uses a slug, since players never see it.
+//! Names and ids are unique (case-insensitively) within a profile.
 
 use crate::manifest::{FileRule, ModManifest, Profile};
 use crate::{paths, slug};
@@ -69,21 +73,21 @@ fn normalize_rules(files: Option<Vec<FileRule>>) -> Result<Option<Vec<FileRule>>
 // --- Ids -----------------------------------------------------------------
 
 /// Gives every mod without an id one, so profiles written before ids
-/// existed keep working. The id keeps the mod's old modloader folder name
-/// (its `name`) when that is a valid folder name, so nothing moves in the
-/// game directory. Deterministic, so loading twice gives the same ids.
+/// existed keep working. The id is the mod's old modloader folder name (its
+/// `name`), so nothing moves in the game directory; names that are not
+/// valid folder names are cleaned first. Deterministic, so loading twice
+/// gives the same ids.
 pub fn assign_missing_ids(profile: &mut Profile) {
     for i in 0..profile.manifests.len() {
         if !profile.manifests[i].id.is_empty() {
             continue;
         }
         let name = profile.manifests[i].name.clone();
-        let base = if paths::validate_component(&name).is_ok() {
-            name
-        } else {
-            slug::slugify(&name)
-        };
-        let id = slug::unique(&base, |candidate| {
+        let mut base = paths::clean_component(&name);
+        if base.is_empty() {
+            base = slug::slugify(&name);
+        }
+        let id = slug::unique_with_separator(&base, " ", |candidate| {
             profile.manifests.iter().any(|m| m.id == candidate)
         });
         profile.manifests[i].id = id;
@@ -107,10 +111,10 @@ fn find_mut<'a>(profile: &'a mut Profile, id: &str) -> Result<&'a mut ModManifes
 
 // --- Edits ---------------------------------------------------------------
 
-/// Appends a new mod and returns its id. The id and its staging folder
-/// (`mods/<id>`) are derived from the name and chosen so they collide with
-/// nothing in this profile or already in staging. The folder itself is not
-/// created here.
+/// Appends a new mod and returns its id. The id is the cleaned-up name,
+/// made unique within the profile. The staging folder is `mods/<slug of the
+/// name>`, made unique against this profile and what is already in staging.
+/// The folder itself is not created here.
 pub fn add_mod(
     profile: &mut Profile,
     staging_dir: &Path,
@@ -119,14 +123,24 @@ pub fn add_mod(
 ) -> Result<String> {
     let name = validate_name(profile, name, None)?;
     let files = normalize_rules(files)?;
-    let id = slug::unique(&slug::slugify(&name), |candidate| {
-        profile.manifests.iter().any(|m| m.id == candidate)
-            || staging_dir.join(MODS_DIR).join(candidate).exists()
+    let clean = paths::clean_component(&name);
+    if clean.is_empty() {
+        bail!("mod name '{name}' has no usable characters");
+    }
+    let id = slug::unique_with_separator(&clean, " ", |candidate| {
+        profile
+            .manifests
+            .iter()
+            .any(|m| m.id.to_lowercase() == candidate.to_lowercase())
+    });
+    let folder = slug::unique(&slug::slugify(&name), |candidate| {
+        let path = format!("{MODS_DIR}/{candidate}");
+        profile.manifests.iter().any(|m| m.mod_path == path) || staging_dir.join(&path).exists()
     });
     profile.manifests.push(ModManifest {
         name,
         id: id.clone(),
-        mod_path: format!("{MODS_DIR}/{id}"),
+        mod_path: format!("{MODS_DIR}/{folder}"),
         active: true,
         files,
     });
@@ -220,9 +234,10 @@ mod tests {
     #[test]
     fn migration_slugifies_names_that_are_not_folder_safe() {
         let mut p = profile();
-        p.manifests = vec![legacy_mod("a/b"), legacy_mod(".hidden")];
+        p.manifests = vec![legacy_mod("a/b"), legacy_mod(".hidden"), legacy_mod("///")];
         assign_missing_ids(&mut p);
-        assert_eq!(ids(&p), ["ab", "hidden"]);
+        assert_eq!(ids(&p)[..2], ["ab", "hidden"]);
+        assert!(ids(&p)[2].starts_with("profile_"), "nothing usable left");
     }
 
     #[test]
@@ -232,7 +247,7 @@ mod tests {
         keep.id = "custom".into();
         p.manifests = vec![keep, legacy_mod("Same"), legacy_mod("Same")];
         assign_missing_ids(&mut p);
-        assert_eq!(ids(&p), ["custom", "Same", "Same_2"]);
+        assert_eq!(ids(&p), ["custom", "Same", "Same 2"]);
 
         let before = ids(&p).join(",");
         assign_missing_ids(&mut p);
@@ -242,13 +257,13 @@ mod tests {
     // --- add ---
 
     #[test]
-    fn add_mod_derives_id_and_folder_from_the_name() {
+    fn add_mod_keeps_the_name_readable_in_the_id_and_slugs_the_folder() {
         let staging = TempDir::new().unwrap();
         let mut p = profile();
 
         let id = add_mod(&mut p, staging.path(), "  Cool Car Pack ", None).unwrap();
 
-        assert_eq!(id, "cool_car_pack");
+        assert_eq!(id, "Cool Car Pack");
         let m = &p.manifests[0];
         assert_eq!(m.name, "Cool Car Pack");
         assert_eq!(m.mod_path, "mods/cool_car_pack");
@@ -257,15 +272,31 @@ mod tests {
     }
 
     #[test]
-    fn add_mod_avoids_ids_used_in_the_profile_or_in_staging() {
+    fn add_mod_numbers_clashing_ids_and_staging_folders() {
         let staging = TempDir::new().unwrap();
         std::fs::create_dir_all(staging.path().join("mods/taken")).unwrap();
         let mut p = profile();
 
         let a = add_mod(&mut p, staging.path(), "Taken", None).unwrap();
-        let b = add_mod(&mut p, staging.path(), "Taken!", None).unwrap();
+        // distinct name, but the same cleaned id once case is ignored
+        let b = add_mod(&mut p, staging.path(), "Taken/", None).unwrap();
+        let c = add_mod(&mut p, staging.path(), "TAKEN!", None).unwrap();
 
-        assert_eq!((a.as_str(), b.as_str()), ("taken_2", "taken_3"));
+        assert_eq!(ids(&p), ["Taken", "Taken 2", "TAKEN!"]);
+        assert_eq!(
+            (a.as_str(), b.as_str(), c.as_str()),
+            ("Taken", "Taken 2", "TAKEN!")
+        );
+        let folders: Vec<_> = p.manifests.iter().map(|m| m.mod_path.as_str()).collect();
+        assert_eq!(folders, ["mods/taken_2", "mods/taken_3", "mods/taken_4"]);
+    }
+
+    #[test]
+    fn add_mod_rejects_names_with_nothing_usable() {
+        let staging = TempDir::new().unwrap();
+        let mut p = profile();
+        assert!(add_mod(&mut p, staging.path(), "//", None).is_err());
+        assert!(p.manifests.is_empty());
     }
 
     #[test]
@@ -343,6 +374,7 @@ mod tests {
         assert_eq!(p.manifests[0].name, "New Name");
         assert_eq!(p.manifests[0].id, id);
         assert_eq!(p.manifests[0].mod_path, "mods/old");
+        assert_eq!(id, "Old");
 
         assert!(rename_mod(&mut p, &id, "other").is_err(), "name taken");
         assert!(rename_mod(&mut p, &id, "").is_err());
@@ -368,11 +400,11 @@ mod tests {
             add_mod(&mut p, staging.path(), n, None).unwrap();
         }
 
-        let removed = remove_mod(&mut p, "b").unwrap();
+        let removed = remove_mod(&mut p, "B").unwrap();
 
         assert_eq!(removed.name, "B");
-        assert_eq!(ids(&p), ["a", "c"]);
-        assert!(remove_mod(&mut p, "b").is_err());
+        assert_eq!(ids(&p), ["A", "C"]);
+        assert!(remove_mod(&mut p, "B").is_err());
     }
 
     #[test]
@@ -383,14 +415,14 @@ mod tests {
             add_mod(&mut p, staging.path(), n, None).unwrap();
         }
 
-        move_mod(&mut p, "d", 0).unwrap();
-        assert_eq!(ids(&p), ["d", "a", "b", "c"]);
-        move_mod(&mut p, "d", 3).unwrap();
-        assert_eq!(ids(&p), ["a", "b", "c", "d"]);
-        move_mod(&mut p, "a", 2).unwrap();
-        assert_eq!(ids(&p), ["b", "c", "a", "d"]);
+        move_mod(&mut p, "D", 0).unwrap();
+        assert_eq!(ids(&p), ["D", "A", "B", "C"]);
+        move_mod(&mut p, "D", 3).unwrap();
+        assert_eq!(ids(&p), ["A", "B", "C", "D"]);
+        move_mod(&mut p, "A", 2).unwrap();
+        assert_eq!(ids(&p), ["B", "C", "A", "D"]);
 
-        assert!(move_mod(&mut p, "a", 4).is_err());
+        assert!(move_mod(&mut p, "A", 4).is_err());
         assert!(move_mod(&mut p, "ghost", 0).is_err());
     }
 }

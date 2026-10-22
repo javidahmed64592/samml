@@ -19,6 +19,18 @@ pub fn validate_component(value: &str) -> Result<()> {
     Ok(())
 }
 
+/// The folder-safe version of a display name, keeping the name readable:
+/// path separators and control characters are removed, leading dots
+/// stripped and the ends trimmed. A name that is already a valid component
+/// comes back unchanged. May be empty if nothing usable is left.
+pub fn clean_component(name: &str) -> String {
+    let kept: String = name
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\') && !c.is_control())
+        .collect();
+    kept.trim().trim_start_matches('.').trim_start().to_string()
+}
+
 /// A relative path that stays inside its base directory: non-empty, no
 /// absolute prefix, no `..`. `.` and trailing slashes are allowed.
 pub fn validate_relative(value: &str) -> Result<()> {
@@ -69,6 +81,21 @@ mod tests {
         }
         for bad in ["", ".", "..", ".hidden", "a/b", "a\\b", " pad", "pad "] {
             assert!(validate_component(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn clean_component_keeps_names_readable() {
+        assert_eq!(clean_component("Cool Car Pack"), "Cool Car Pack");
+        assert_eq!(clean_component("  Cool Car Pack  "), "Cool Car Pack");
+        assert_eq!(clean_component("a/b\\c"), "abc");
+        assert_eq!(clean_component("..hidden"), "hidden");
+        assert_eq!(clean_component("tab\there"), "tabhere");
+        assert_eq!(clean_component("///"), "");
+        // valid components are left exactly as they are
+        for ok in ["Test Mod 1", "cleo-5.4.0", "a  b"] {
+            assert!(validate_component(ok).is_ok());
+            assert_eq!(clean_component(ok), ok);
         }
     }
 
