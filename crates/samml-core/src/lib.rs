@@ -1,3 +1,14 @@
+//! SAMML core: everything the CLI and the GUI do, with no printing and no
+//! argument parsing.
+//!
+//! - `manifest`: data types (app config, profiles, mods)
+//! - `receipt`: record of what a deploy changed
+//! - `deploy`: symlink mods into the game directory and undo it
+//! - `launch`: start the game through Steam
+//!
+//! This file holds profile loading, listing and creation until those move
+//! into their own module (Phase A, step 2).
+
 use crate::manifest::{AppManifest, Profile, ProfileInfo};
 use anyhow::{Context, Result};
 use std::fs;
@@ -7,6 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub mod deploy;
 pub mod launch;
 pub mod manifest;
+pub mod receipt;
 
 pub fn load_app_manifest(path: &Path) -> Result<AppManifest> {
     let text = fs::read_to_string(path)

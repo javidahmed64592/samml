@@ -58,10 +58,10 @@ fn main() -> Result<()> {
             }
 
             match command.as_str() {
-                "deploy" => deploy(&app, &profile.manifests)?,
+                "deploy" => deploy(&app, slug, &profile.manifests)?,
                 "launch" => launch(&app)?,
                 "run" => {
-                    deploy(&app, &profile.manifests)?;
+                    deploy(&app, slug, &profile.manifests)?;
                     launch(&app)?;
                 }
                 _ => unreachable!(),
@@ -93,8 +93,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppManifest, mods: &[manifest::ModManifest]) -> Result<()> {
-    deploy::deploy(app, mods)?;
+fn deploy(app: &manifest::AppManifest, slug: &str, mods: &[manifest::ModManifest]) -> Result<()> {
+    deploy::deploy(app, slug, mods)?;
     println!("Deployed.");
     Ok(())
 }

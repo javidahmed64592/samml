@@ -1,3 +1,5 @@
+//! Starting the game through Steam.
+
 use crate::manifest::AppManifest;
 use anyhow::{Context, Result};
 use std::process::Command;

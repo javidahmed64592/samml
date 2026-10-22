@@ -1,24 +1,17 @@
+//! Turns a list of mods into symlinks in `GAME_DIR`, and undoes them.
+//!
+//! Owns linking, stock-file backups and teardown. Reads and writes the
+//! receipt through `receipt`; the mods and paths come from `manifest`.
+
 use crate::manifest::{AppManifest, ModManifest};
+use crate::receipt::{self, Receipt};
 use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::ErrorKind;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 
-const RECEIPT_FILE: &str = ".samml_receipt.json";
 const BACKUP_DIR: &str = ".samml_backups";
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct Receipt {
-    /// Every symlink path (relative to GAME_DIR) this tool created.
-    links: Vec<String>,
-    /// Every directory (relative to GAME_DIR) this tool had to create to
-    /// make room for a symlink, that did NOT already exist beforehand.
-    /// Deepest-first, matching creation order.
-    #[serde(default)]
-    created_dirs: Vec<String>,
-}
 
 fn backup_path_for(game_dir: &Path, rel: &str) -> PathBuf {
     game_dir.join(BACKUP_DIR).join(rel)
@@ -71,11 +64,9 @@ fn create_dir_all_tracked(
 /// placed inside it, undoing in reverse order guarantees children are
 /// removed first.
 fn teardown(game_dir: &Path) -> Result<()> {
-    let receipt_path = game_dir.join(RECEIPT_FILE);
-    if !receipt_path.exists() {
+    let Some(receipt) = receipt::read(game_dir)? else {
         return Ok(());
-    }
-    let receipt: Receipt = serde_json::from_str(&fs::read_to_string(&receipt_path)?)?;
+    };
 
     for rel in receipt.links.iter().rev() {
         let path = game_dir.join(rel);
@@ -119,7 +110,7 @@ fn teardown(game_dir: &Path) -> Result<()> {
         }
     }
 
-    Ok(())
+    receipt::remove(game_dir)
 }
 
 /// Create `link_path -> target`, making sure parent directories exist
@@ -132,18 +123,12 @@ fn teardown(game_dir: &Path) -> Result<()> {
 /// can put it back later. We refuse to proceed if a backup already exists
 /// at that location, since that means a previous run left things in an
 /// inconsistent state and blindly overwriting could lose the real original.
-fn link(
-    target: &Path,
-    link_path: &Path,
-    created: &mut Vec<String>,
-    created_dirs: &mut Vec<String>,
-    game_dir: &Path,
-) -> Result<()> {
+fn link(target: &Path, link_path: &Path, receipt: &mut Receipt, game_dir: &Path) -> Result<()> {
     if !target.exists() {
         bail!("source does not exist: {}", target.display());
     }
     if let Some(parent) = link_path.parent() {
-        create_dir_all_tracked(parent, game_dir, created_dirs)?;
+        create_dir_all_tracked(parent, game_dir, &mut receipt.created_dirs)?;
     }
 
     let rel = link_path
@@ -172,10 +157,11 @@ fn link(
         })?;
     }
 
+    // Recorded before linking: if the symlink call fails after a backup was
+    // taken, teardown still knows to restore that backup.
+    receipt.links.push(rel);
     symlink(target, link_path)
-        .with_context(|| format!("linking {} -> {}", link_path.display(), target.display()))?;
-    created.push(rel);
-    Ok(())
+        .with_context(|| format!("linking {} -> {}", link_path.display(), target.display()))
 }
 
 /// Resolve one FileRule into concrete (link_path, target_real_path) pairs,
@@ -220,8 +206,7 @@ fn deploy_mod(
     m: &ModManifest,
     staging_dir: &Path,
     game_dir: &Path,
-    created: &mut Vec<String>,
-    created_dirs: &mut Vec<String>,
+    receipt: &mut Receipt,
 ) -> Result<()> {
     let mod_root = staging_dir.join(&m.mod_path);
     if !mod_root.is_dir() {
@@ -234,7 +219,7 @@ fn deploy_mod(
                 for (link_path, target_path) in
                     resolve_rule(&mod_root, game_dir, &rule.source, &rule.target)?
                 {
-                    link(&target_path, &link_path, created, created_dirs, game_dir)?;
+                    link(&target_path, &link_path, receipt, game_dir)?;
                 }
             }
         }
@@ -248,8 +233,22 @@ fn deploy_mod(
                 );
             }
             let link_path = modloader_dir.join(&m.name);
-            link(&mod_root, &link_path, created, created_dirs, game_dir)?;
+            link(&mod_root, &link_path, receipt, game_dir)?;
         }
+    }
+    Ok(())
+}
+
+/// Link every active mod into `game_dir`, recording each change in `receipt`
+/// as it happens so a failure part-way still leaves a complete record.
+fn deploy_active_mods(
+    app: &AppManifest,
+    mods: &[ModManifest],
+    receipt: &mut Receipt,
+) -> Result<()> {
+    for m in mods.iter().filter(|m| m.active) {
+        deploy_mod(m, &app.staging_dir, &app.game_dir, receipt)
+            .with_context(|| format!("deploying mod '{}'", m.name))?;
     }
     Ok(())
 }
@@ -257,28 +256,38 @@ fn deploy_mod(
 /// Deploy every active manifest, in array order. Symlinks straight from
 /// STAGING_DIR into GAME_DIR; nothing is copied. Any stock file a mod
 /// overwrites is backed up first and restored on the next teardown.
-pub fn deploy(app: &AppManifest, mods: &[ModManifest]) -> Result<()> {
+///
+/// All-or-nothing: if any mod fails, everything already done is rolled
+/// back and the game directory is left as it was found.
+pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[ModManifest]) -> Result<()> {
     let game_dir = &app.game_dir;
-    let staging_dir = &app.staging_dir;
 
     teardown(game_dir)?;
 
-    let mut created = Vec::new();
-    let mut created_dirs = Vec::new();
-    for m in mods.iter().filter(|m| m.active) {
-        deploy_mod(m, staging_dir, game_dir, &mut created, &mut created_dirs)
-            .with_context(|| format!("deploying mod '{}'", m.name))?;
-    }
-
-    let receipt = Receipt {
-        links: created,
-        created_dirs,
+    let mut receipt = Receipt {
+        profile: Some(profile_slug.to_string()),
+        ..Receipt::default()
     };
-    fs::write(
-        game_dir.join(RECEIPT_FILE),
-        serde_json::to_string_pretty(&receipt)?,
-    )?;
-    Ok(())
+    let result = deploy_active_mods(app, mods, &mut receipt);
+
+    // Written on failure too: rollback below is driven by this record.
+    receipt::write(game_dir, &receipt)?;
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => Err(match teardown(game_dir) {
+            Ok(()) => err.context("deploy failed; changes were rolled back"),
+            Err(rollback_err) => err.context(format!(
+                "deploy failed and rollback also failed (run clean to retry): {rollback_err:#}"
+            )),
+        }),
+    }
+}
+
+/// Slug of the profile currently deployed to the game directory, or `None`
+/// if nothing is deployed.
+pub fn deployed_profile(app: &AppManifest) -> Result<Option<String>> {
+    Ok(receipt::read(&app.game_dir)?.and_then(|r| r.profile))
 }
 
 /// Tear down to a clean vanilla state without deploying anything.
@@ -290,6 +299,7 @@ pub fn clean(app: &AppManifest) -> Result<()> {
 mod tests {
     use super::*;
     use crate::manifest::FileRule;
+    use crate::receipt::RECEIPT_FILE;
     use tempfile::TempDir;
 
     struct Env {
@@ -388,7 +398,7 @@ mod tests {
         env.stage("mods/Cool/file.txt", "hi");
         let mods = [modloader(), plain_mod("Cool", "mods/Cool")];
 
-        deploy(&env.app, &mods).unwrap();
+        deploy(&env.app, "p", &mods).unwrap();
 
         assert!(env.game("modloader").is_symlink());
         assert_eq!(
@@ -414,7 +424,7 @@ mod tests {
             ],
         )];
 
-        deploy(&env.app, &mods).unwrap();
+        deploy(&env.app, "p", &mods).unwrap();
 
         assert_eq!(fs::read_to_string(env.game("merged/a.txt")).unwrap(), "a");
         assert_eq!(fs::read_to_string(env.game("renamed/b.txt")).unwrap(), "b");
@@ -434,7 +444,7 @@ mod tests {
         let mut m = mod_with_rules("M", "m", vec![rule("file.txt", "file.txt")]);
         m.active = false;
 
-        deploy(&env.app, &[m]).unwrap();
+        deploy(&env.app, "p", &[m]).unwrap();
 
         assert!(!env.game("file.txt").exists());
     }
@@ -444,7 +454,7 @@ mod tests {
         let env = Env::new();
         env.stage("mods/Cool/file.txt", "hi");
 
-        let err = deploy(&env.app, &[plain_mod("Cool", "mods/Cool")]).unwrap_err();
+        let err = deploy(&env.app, "p", &[plain_mod("Cool", "mods/Cool")]).unwrap_err();
 
         assert!(format!("{err:#}").contains("modloader/ does not exist"));
     }
@@ -452,12 +462,12 @@ mod tests {
     #[test]
     fn errors_on_missing_mod_folder_or_source() {
         let env = Env::new();
-        let err = deploy(&env.app, &[plain_mod("Ghost", "mods/Ghost")]).unwrap_err();
+        let err = deploy(&env.app, "p", &[plain_mod("Ghost", "mods/Ghost")]).unwrap_err();
         assert!(format!("{err:#}").contains("has no folder"));
 
         env.stage("m/other.txt", "x");
         let m = mod_with_rules("M", "m", vec![rule("missing.txt", "missing.txt")]);
-        let err = deploy(&env.app, &[m]).unwrap_err();
+        let err = deploy(&env.app, "p", &[m]).unwrap_err();
         assert!(format!("{err:#}").contains("source does not exist"));
     }
 
@@ -472,7 +482,7 @@ mod tests {
             vec![rule("stock.dat", "data/stock.dat")],
         )];
 
-        deploy(&env.app, &mods).unwrap();
+        deploy(&env.app, "p", &mods).unwrap();
         assert_eq!(
             fs::read_to_string(env.game("data/stock.dat")).unwrap(),
             "modded"
@@ -501,7 +511,7 @@ mod tests {
             vec![rule("a.txt", "data/a.txt"), rule("b.txt", "new/deep/b.txt")],
         )];
 
-        deploy(&env.app, &mods).unwrap();
+        deploy(&env.app, "p", &mods).unwrap();
         assert!(env.game("new/deep/b.txt").is_symlink());
 
         clean(&env.app).unwrap();
@@ -521,7 +531,7 @@ mod tests {
         let env = Env::new();
         env.stage("m/a.txt", "a");
         let mods = [mod_with_rules("M", "m", vec![rule("a.txt", "new/a.txt")])];
-        deploy(&env.app, &mods).unwrap();
+        deploy(&env.app, "p", &mods).unwrap();
         env.write_game("new/user.txt", "keep me");
 
         clean(&env.app).unwrap();
@@ -548,11 +558,73 @@ mod tests {
         let first = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
         let second = [mod_with_rules("M", "m", vec![rule("b.txt", "b.txt")])];
 
-        deploy(&env.app, &first).unwrap();
-        deploy(&env.app, &second).unwrap();
+        deploy(&env.app, "p", &first).unwrap();
+        deploy(&env.app, "p", &second).unwrap();
 
         assert!(!env.game("a.txt").exists());
         assert!(env.game("b.txt").is_symlink());
+    }
+
+    #[test]
+    fn failed_deploy_rolls_back_everything() {
+        let env = Env::new();
+        env.write_game("data/stock.dat", "original");
+        env.stage("m/a.txt", "a");
+        env.stage("m/stock.dat", "modded");
+        let mods = [
+            mod_with_rules(
+                "M",
+                "m",
+                vec![
+                    rule("a.txt", "new/a.txt"),
+                    rule("stock.dat", "data/stock.dat"),
+                ],
+            ),
+            mod_with_rules("Broken", "m", vec![rule("missing.txt", "missing.txt")]),
+        ];
+
+        let err = deploy(&env.app, "p", &mods).unwrap_err();
+
+        assert!(format!("{err:#}").contains("rolled back"));
+        assert!(!env.game("new").exists(), "created dirs are removed");
+        let stock = env.game("data/stock.dat");
+        assert!(!stock.is_symlink());
+        assert_eq!(fs::read_to_string(stock).unwrap(), "original");
+        assert!(!env.game(".samml_backups/data/stock.dat").exists());
+        assert!(!env.game(RECEIPT_FILE).exists());
+        assert_eq!(deployed_profile(&env.app).unwrap(), None);
+    }
+
+    #[test]
+    fn failed_redeploy_leaves_vanilla_not_the_old_deployment() {
+        let env = Env::new();
+        env.stage("m/a.txt", "a");
+        let good = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
+        let bad = [mod_with_rules("M", "m", vec![rule("nope.txt", "nope.txt")])];
+        deploy(&env.app, "good", &good).unwrap();
+
+        deploy(&env.app, "bad", &bad).unwrap_err();
+
+        assert!(!env.game("a.txt").exists());
+        assert_eq!(deployed_profile(&env.app).unwrap(), None);
+    }
+
+    #[test]
+    fn receipt_records_deployed_profile_until_clean() {
+        let env = Env::new();
+        env.stage("m/a.txt", "a");
+        let mods = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
+        assert_eq!(deployed_profile(&env.app).unwrap(), None);
+
+        deploy(&env.app, "my_profile", &mods).unwrap();
+        assert_eq!(
+            deployed_profile(&env.app).unwrap().as_deref(),
+            Some("my_profile")
+        );
+
+        clean(&env.app).unwrap();
+        assert_eq!(deployed_profile(&env.app).unwrap(), None);
+        assert!(!env.game(RECEIPT_FILE).exists());
     }
 
     #[test]
@@ -567,7 +639,7 @@ mod tests {
             vec![rule("stock.dat", "stock.dat")],
         )];
 
-        let err = deploy(&env.app, &mods).unwrap_err();
+        let err = deploy(&env.app, "p", &mods).unwrap_err();
 
         assert!(format!("{err:#}").contains("leftover inconsistent state"));
         assert_eq!(
