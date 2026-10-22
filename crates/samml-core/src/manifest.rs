@@ -1,3 +1,6 @@
+//! Plain data types shared by core, the CLI and (via serde) the GUI.
+//! No filesystem access or behaviour lives here.
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
