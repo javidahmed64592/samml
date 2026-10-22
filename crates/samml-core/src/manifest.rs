@@ -40,3 +40,51 @@ pub struct ProfileInfo {
     pub slug: String,
     pub name: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_PROFILE: &str = include_str!("../../../tests/test_profile.json");
+
+    fn load_profile() -> Profile {
+        serde_json::from_str(TEST_PROFILE).expect("test profile should parse")
+    }
+
+    #[test]
+    fn parses_test_profile() {
+        let profile = load_profile();
+        assert_eq!(profile.name, "Test Profile");
+        assert_eq!(profile.manifests.len(), 4);
+        assert!(profile.manifests.iter().all(|m| m.active));
+
+        // Mods without a `files` array deploy to the modloader directory by default
+        assert!(profile.manifests[2].files.is_none());
+    }
+
+    #[test]
+    fn parses_trailing_slash_rules() {
+        let profile = load_profile();
+        let mod2 = profile
+            .manifests
+            .iter()
+            .find(|m| m.name == "Test Mod 2")
+            .expect("Test Mod 2 should exist");
+        let files = mod2.files.as_ref().expect("Test Mod 2 should have files");
+
+        let rule = |source: &str| {
+            files
+                .iter()
+                .find(|f| f.source == source)
+                .unwrap_or_else(|| panic!("missing rule for {source}"))
+        };
+
+        // Trailing slashes must survive parsing untouched
+        assert_eq!(rule("contents_dir/").target, "merged_dir/");
+        assert_eq!(rule("contents_dir_b/").target, "merged_dir_b");
+        assert_eq!(rule("whole_dir").target, "container_dir/");
+        assert_eq!(rule("whole_dir_b").target, "renamed_dir");
+        assert_eq!(rule("file.txt").target, "container_dir/");
+        assert_eq!(rule("file_b.txt").target, "renamed_file.txt");
+    }
+}
