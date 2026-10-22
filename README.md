@@ -7,7 +7,7 @@
 <!-- omit from toc -->
 # San Andreas Mod Manager Linux (SAMML)
 
-A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust.
+A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust. Linux is the only supported platform.
 
 ## File Path Variables
 
@@ -19,7 +19,8 @@ In this guide, we will use the following variables for file paths:
 
 ## App Manifest
 
-The app manifest is a JSON file named `app_manifest.json` that defines the game directory, staging directory, and the list of mod profiles.
+The app manifest is a JSON file named `app_manifest.json` that defines the game directory, staging directory, and the profiles directory.
+Copy `app_manifest.example.json` to `app_manifest.json` and edit the paths; your copy is gitignored.
 
 ```json
 {
