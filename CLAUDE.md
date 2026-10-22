@@ -13,6 +13,9 @@ The UI manages everything. Players never open mod folders, `app_manifest.json` o
 ```
 crates/samml-core/   all logic; no printing, no argument parsing
   config.rs          load the app manifest
+  slug.rs            display name -> handle, uniqueness
+  paths.rs           validate/join user-supplied relative paths
+  mods.rs            edit a profile's mod list in memory (add/remove/rename/move/...)
   deploy.rs          teardown / link / deploy (all-or-nothing) / clean
   launch.rs          launching the game through Steam
   lib.rs             module list only
@@ -42,17 +45,20 @@ tests/               fixtures shared by tests (app_manifest.json, profiles/)
 - **Profile**: `PROFILES_DIR/<slug>.json`; an ordered list of mods. The slug is the stable handle and does not change when the profile is renamed.
 - **Mod** (`ModManifest`): display name, `mod_path` (folder under STAGING_DIR), `active`, optional `files` rules.
 - **Deploy order** is array order. CLEO and modloader must come before mods that deploy into `modloader/`.
-- **Default deployment**: a mod with no `files` is linked to `GAME_DIR/modloader/<folder id>`.
+- **Default deployment**: a mod with no `files` is linked to `GAME_DIR/modloader/<name>`.
 - **File rules** use rsync-style trailing slashes (see README). The UI hides this convention behind plain choices.
 - **Receipt** (`GAME_DIR/.samml_receipt.json`): records every symlink and created directory so `clean` can undo exactly what was done. Stock files that a mod overwrites are moved to `GAME_DIR/.samml_backups/` and restored on teardown.
 - Mod folders in staging are shared between profiles.
 
 ## Decisions
 
-- **Immutable folder id**: each mod gets a stable folder id (the `modloader/<id>` name and its staging folder). The display name is freely editable and is never used as a path. Existing profiles that lack an id are migrated from `mod_path`.
+- **Name = in-game folder**: a mod's display `name` is exactly what modloader lists in game, so it is the `modloader/<name>` folder. Names must be valid folder names; invalid names are rejected with the reason (never silently cleaned), and are unique within a profile, ignoring case. There is no separate id; mods are looked up by name.
+- **Renaming a mod renames its folder** on the next deploy. Resetting that mod's modloader settings is acceptable. If the profile is currently deployed, the old folder remains until redeploy, so the UI should tell the player to redeploy (the deploy plan in step 5 should detect this).
+- **Staging folder** (`mod_path`): mods added through the app are stored at `mods/<slug>`, chosen once when the mod is added and never changed (other profiles may share it). Players never see it, so it uses a slug.
 - **Removing a mod** removes it from the profile only, by default. The files stay in staging.
 - **Deleting a mod's files** is a separate, opt-in choice (a checkbox in the UI). The UI shows which other profiles use the mod. If the user deletes the files while other profiles use them, the mod is also removed from those profiles.
-- **Names** are unique within a profile. All user-entered paths are validated: relative only, no `..`, no escaping STAGING_DIR or GAME_DIR.
+- **Paths**: all user-entered paths are validated: relative only, no `..`, no escaping STAGING_DIR or GAME_DIR. Deploy re-validates, so hand-edited profiles get the same checks.
+- **Rules**: an empty `files` list means the same as no list (deploy to `modloader`). A target of `./` means "inside the game folder".
 - **Importing** copies from native paths on the Rust side (Tauri dialog and drag-and-drop give paths), so file bytes never pass through the webview.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.
 
@@ -85,7 +91,7 @@ tests/               fixtures shared by tests (app_manifest.json, profiles/)
 ### Phase A - core (tests, no UI)
 1. ~~Deploy rollback on failure; receipt records the deployed profile slug.~~ Done.
 2. ~~Profile persistence: atomic `save_profile`; rename, duplicate, delete.~~ Done (`profiles.rs`).
-3. Mod operations on a `Profile` (add, update, remove, move, set active) with name and path validation; mod folder ids.
+3. ~~Mod operations on a `Profile` (add, remove, rename, move, set active, set files) with name and path validation.~~ Done (`mods.rs`, `paths.rs`, `slug.rs`).
 4. Mod storage: import files into a mod folder, list a mod's files, find which profiles use a mod, delete mod files (with removal from other profiles).
 5. `plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt.
 6. Config: load, save, validate, platform config dir.

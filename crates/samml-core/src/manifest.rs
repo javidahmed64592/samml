@@ -23,6 +23,8 @@ pub struct FileRule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModManifest {
+    /// The mod's name. Also the folder it appears under in `modloader/` (and
+    /// so in game) when `files` is omitted, so it must be a valid folder name.
     pub name: String,
     pub mod_path: String,
     #[serde(default)]

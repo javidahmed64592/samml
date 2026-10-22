@@ -6,52 +6,20 @@
 //! profile is not done here; that is `mods` (load, edit, then `save_profile`).
 
 use crate::manifest::{Profile, ProfileInfo};
+use crate::slug;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const PROFILE_EXTENSION: &str = "json";
 
 // --- Slugs ---------------------------------------------------------------
 
-/// Lowercase, underscore-separated, filesystem-safe handle derived from a display
-/// name. Falls back to a timestamp-based slug if nothing alphanumeric
-/// survives (e.g. a name made entirely of emoji/punctuation).
-pub fn slugify(name: &str) -> String {
-    let mut slug = String::new();
-    let mut last_was_separator = false;
-    for c in name.trim().chars() {
-        if c.is_alphanumeric() {
-            slug.push(c.to_ascii_lowercase());
-            last_was_separator = false;
-        } else if (c.is_whitespace() || c == '-' || c == '_') && !last_was_separator {
-            slug.push('_');
-            last_was_separator = true;
-        }
-    }
-    let slug = slug.trim_matches('_').to_string();
-    if slug.is_empty() {
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        format!("profile_{ts}")
-    } else {
-        slug
-    }
-}
-
-/// Appends _2, _3, ... to `base_slug` until it no longer collides with an
-/// existing profile file.
+/// Picks a slug based on `base_slug` that no existing profile file uses.
 fn unique_slug(profiles_dir: &Path, base_slug: &str) -> String {
-    let mut candidate = base_slug.to_string();
-    let mut n = 2;
-    while slug_path(profiles_dir, &candidate).is_file() {
-        candidate = format!("{base_slug}_{n}");
-        n += 1;
-    }
-    candidate
+    slug::unique(base_slug, |candidate| {
+        slug_path(profiles_dir, candidate).is_file()
+    })
 }
 
 /// Rejects anything that could name a file outside `profiles_dir`. Slugs
@@ -161,7 +129,7 @@ pub fn save_profile(profiles_dir: &Path, slug: &str, profile: &Profile) -> Resul
 
 /// Writes `profile` under a fresh slug derived from `name`.
 fn save_as_new(profiles_dir: &Path, name: &str, profile: &Profile) -> Result<(String, PathBuf)> {
-    let slug = unique_slug(profiles_dir, &slugify(name));
+    let slug = unique_slug(profiles_dir, &slug::slugify(name));
     save_profile(profiles_dir, &slug, profile)?;
     let path = slug_path(profiles_dir, &slug);
     Ok((slug, path))
@@ -275,13 +243,6 @@ mod tests {
     }
 
     // --- slugs ---
-
-    #[test]
-    fn slugify_gives_expected_slug() {
-        assert_eq!(slugify("Test Profile"), "test_profile");
-        assert_eq!(slugify("  My -- Cool_Profile!  "), "my_cool_profile");
-        assert!(slugify("!!!").starts_with("profile_"));
-    }
 
     #[test]
     fn unique_slug_appends_number() {
