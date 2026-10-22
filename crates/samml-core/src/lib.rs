@@ -24,17 +24,6 @@ pub fn load_profile(path: &Path) -> Result<Profile> {
     Ok(profile)
 }
 
-/// Looks up a profile by its on-disk slug (the CLI/UI's stable handle),
-/// e.g. `find_profile_by_slug(dir, "default-profile")` reads
-/// `dir/default-profile.json`.
-pub fn find_profile_by_slug(profiles_dir: &Path, slug: &str) -> Result<Option<Profile>> {
-    let path = profiles_dir.join(format!("{slug}.json"));
-    if !path.is_file() {
-        return Ok(None);
-    }
-    Ok(Some(load_profile(&path)?))
-}
-
 /// Lists every profile in `profiles_dir`. Reads each file to get its
 /// canonical `name` - cheap at the scale of a handful of profile files,
 /// and the only way to show accurate names without assuming the filename
@@ -109,6 +98,17 @@ fn unique_slug(profiles_dir: &Path, base_slug: &str) -> String {
     candidate
 }
 
+/// Looks up a profile by its on-disk slug (the CLI/UI's stable handle),
+/// e.g. `find_profile_by_slug(dir, "default-profile")` reads
+/// `dir/default-profile.json`.
+pub fn find_profile_by_slug(profiles_dir: &Path, slug: &str) -> Result<Option<Profile>> {
+    let path = profiles_dir.join(format!("{slug}.json"));
+    if !path.is_file() {
+        return Ok(None);
+    }
+    Ok(Some(load_profile(&path)?))
+}
+
 /// Creates a new, empty profile named `name`, returning its slug (the
 /// handle to pass to deploy/launch/run) and the path it was written to.
 pub fn create_profile(profiles_dir: &Path, name: &str) -> Result<(String, PathBuf)> {
@@ -123,4 +123,43 @@ pub fn create_profile(profiles_dir: &Path, name: &str) -> Result<(String, PathBu
     fs::write(&path, serde_json::to_string_pretty(&profile)?)
         .with_context(|| format!("writing {}", path.display()))?;
     Ok((slug, path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo_path(relative: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(relative)
+    }
+
+    #[test]
+    fn loads_app_manifest() {
+        let manifest = load_app_manifest(&repo_path("app_manifest.json")).unwrap();
+        assert!(!manifest.game_dir.as_os_str().is_empty());
+        assert!(!manifest.staging_dir.as_os_str().is_empty());
+        assert!(!manifest.profiles_dir.as_os_str().is_empty());
+        assert_eq!(manifest.steam_app_id, Some(12120));
+    }
+
+    #[test]
+    fn load_app_manifest_reports_missing_file() {
+        let err = load_app_manifest(&repo_path("does_not_exist.json")).unwrap_err();
+        assert!(err.to_string().contains("reading app manifest"));
+    }
+
+    #[test]
+    fn loads_profile() {
+        let profile = load_profile(&repo_path("tests/test_profile.json")).unwrap();
+        assert_eq!(profile.name, "Test Profile");
+        assert_eq!(profile.manifests.len(), 4);
+    }
+
+    #[test]
+    fn load_profile_reports_missing_file() {
+        let err = load_profile(&repo_path("tests/does_not_exist.json")).unwrap_err();
+        assert!(err.to_string().contains("reading profile"));
+    }
 }
