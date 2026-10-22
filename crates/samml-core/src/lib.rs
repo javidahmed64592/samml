@@ -152,7 +152,7 @@ mod tests {
 
     #[test]
     fn loads_profile() {
-        let profile = load_profile(&repo_path("tests/test_profile.json")).unwrap();
+        let profile = load_profile(&repo_path("tests/profiles/test_profile.json")).unwrap();
         assert_eq!(profile.name, "Test Profile");
         assert_eq!(profile.manifests.len(), 4);
     }
@@ -161,5 +161,19 @@ mod tests {
     fn load_profile_reports_missing_file() {
         let err = load_profile(&repo_path("tests/does_not_exist.json")).unwrap_err();
         assert!(err.to_string().contains("reading profile"));
+    }
+
+    #[test]
+    fn lists_profiles() {
+        let profiles = list_profiles(&repo_path("tests/profiles")).unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].slug, "test_profile");
+        assert_eq!(profiles[0].name, "Test Profile");
+    }
+
+    #[test]
+    fn lists_no_profiles_for_missing_dir() {
+        let profiles = list_profiles(&repo_path("tests/no_such_dir")).unwrap();
+        assert!(profiles.is_empty());
     }
 }

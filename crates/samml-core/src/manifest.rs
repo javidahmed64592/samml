@@ -46,7 +46,7 @@ mod tests {
     use super::*;
 
     const APP_MANIFEST: &str = include_str!("../../../app_manifest.json");
-    const TEST_PROFILE: &str = include_str!("../../../tests/test_profile.json");
+    const TEST_PROFILE: &str = include_str!("../../../tests/profiles/test_profile.json");
 
     fn load_app_manifest() -> AppManifest {
         serde_json::from_str(APP_MANIFEST).expect("app manifest should parse")
