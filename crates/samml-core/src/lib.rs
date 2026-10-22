@@ -59,48 +59,48 @@ pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileInfo>> {
     Ok(profiles)
 }
 
-/// Lowercase, hyphenated, filesystem-safe handle derived from a display
+/// Lowercase, underscore-separated, filesystem-safe handle derived from a display
 /// name. Falls back to a timestamp-based slug if nothing alphanumeric
 /// survives (e.g. a name made entirely of emoji/punctuation).
 pub fn slugify(name: &str) -> String {
     let mut slug = String::new();
-    let mut last_was_hyphen = false;
+    let mut last_was_separator = false;
     for c in name.trim().chars() {
         if c.is_alphanumeric() {
             slug.push(c.to_ascii_lowercase());
-            last_was_hyphen = false;
-        } else if (c.is_whitespace() || c == '-' || c == '_') && !last_was_hyphen {
-            slug.push('-');
-            last_was_hyphen = true;
+            last_was_separator = false;
+        } else if (c.is_whitespace() || c == '-' || c == '_') && !last_was_separator {
+            slug.push('_');
+            last_was_separator = true;
         }
     }
-    let slug = slug.trim_matches('-').to_string();
+    let slug = slug.trim_matches('_').to_string();
     if slug.is_empty() {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        format!("profile-{ts}")
+        format!("profile_{ts}")
     } else {
         slug
     }
 }
 
-/// Appends -2, -3, ... to `base_slug` until it no longer collides with an
+/// Appends _2, _3, ... to `base_slug` until it no longer collides with an
 /// existing profile file.
 fn unique_slug(profiles_dir: &Path, base_slug: &str) -> String {
     let mut candidate = base_slug.to_string();
     let mut n = 2;
     while profiles_dir.join(format!("{candidate}.json")).is_file() {
-        candidate = format!("{base_slug}-{n}");
+        candidate = format!("{base_slug}_{n}");
         n += 1;
     }
     candidate
 }
 
 /// Looks up a profile by its on-disk slug (the CLI/UI's stable handle),
-/// e.g. `find_profile_by_slug(dir, "default-profile")` reads
-/// `dir/default-profile.json`.
+/// e.g. `find_profile_by_slug(dir, "default_profile")` reads
+/// `dir/default_profile.json`.
 pub fn find_profile_by_slug(profiles_dir: &Path, slug: &str) -> Result<Option<Profile>> {
     let path = profiles_dir.join(format!("{slug}.json"));
     if !path.is_file() {
@@ -175,5 +175,10 @@ mod tests {
     fn lists_no_profiles_for_missing_dir() {
         let profiles = list_profiles(&repo_path("tests/no_such_dir")).unwrap();
         assert!(profiles.is_empty());
+    }
+
+    #[test]
+    fn slugify_gives_expected_slug() {
+        assert_eq!(slugify("Test Profile"), "test_profile");
     }
 }
