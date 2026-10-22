@@ -16,45 +16,48 @@ pub struct AppManifest {
 }
 
 // Mod library: every folder in STAGING_DIR is a mod, named after its folder.
-// Settings are only stored for mods that need something other than the
-// default of deploying the whole folder to `modloader/<name>`.
+// Each mod has a stable id; profiles refer to mods by id, so renaming a mod
+// (and its folder) only changes the library.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRule {
     pub source: String,
     pub target: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModSettings {
+    /// The mod's name: its folder in staging and its `modloader/<name>`
+    /// folder, so what shows in game.
+    pub name: String,
     /// Where the mod's files go. `None` deploys the whole mod folder to
     /// `modloader/<name>`.
     #[serde(default)]
     pub files: Option<Vec<FileRule>>,
 }
 
-/// The contents of `STAGING_DIR/.samml_library.json`, keyed by mod name.
+/// The contents of `STAGING_DIR/.samml_library.json`, keyed by mod id.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Library {
     #[serde(default)]
     pub mods: BTreeMap<String, ModSettings>,
 }
 
-/// A mod as the UI sees it: a folder in staging joined with its settings.
+/// A mod as the UI sees it: a library entry joined with its folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LibraryMod {
-    /// The folder name, which is also the name shown in game.
+    pub id: String,
     pub name: String,
     pub files: Option<Vec<FileRule>>,
-    /// Why the folder cannot be used as a mod yet (e.g. its name is not
-    /// valid), or `None` if it is fine.
+    /// Why the mod cannot be used yet (e.g. its folder is missing or its
+    /// name is not valid), or `None` if it is fine.
     pub problem: Option<String>,
 }
 
 // Mod profiles: a choice of mods from the library, in deploy order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileMod {
-    /// The library mod's name.
-    pub name: String,
+    /// The library mod's id.
+    pub id: String,
     #[serde(default)]
     pub active: bool,
 }
@@ -70,6 +73,18 @@ pub struct Profile {
 pub struct ProfileInfo {
     pub slug: String,
     pub name: String,
+}
+
+/// A profile entry as the UI sees it: the entry joined with the library.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileModView {
+    pub id: String,
+    /// `None` if the id is not in the library at all.
+    pub name: Option<String>,
+    pub active: bool,
+    /// Why the mod cannot be deployed (not in the library, folder missing,
+    /// ...), or `None` if it is fine.
+    pub problem: Option<String>,
 }
 
 /// What deploy needs to know about one mod: a profile entry joined with the
@@ -101,24 +116,31 @@ mod tests {
     fn parses_test_profile() {
         let profile: Profile = serde_json::from_str(TEST_PROFILE).unwrap();
         assert_eq!(profile.name, "Test Profile");
-        let names: Vec<_> = profile.mods.iter().map(|m| m.name.as_str()).collect();
+        let ids: Vec<_> = profile.mods.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
-            names,
-            ["CLEO 5.4.0", "Modloader", "Test Mod 1", "Test Mod 2"]
+            ids,
+            [
+                "cleo_5_4_0-4f2a",
+                "modloader-91c3",
+                "test_mod_1-77de",
+                "test_mod_2-0b5e"
+            ]
         );
         assert!(profile.mods.iter().all(|m| m.active));
     }
 
     #[test]
-    fn mods_without_settings_use_the_default_deployment() {
+    fn mods_without_rules_use_the_default_deployment() {
         let library: Library = serde_json::from_str(TEST_LIBRARY).unwrap();
-        assert!(!library.mods.contains_key("Test Mod 1"));
+        let plain = &library.mods["test_mod_1-77de"];
+        assert_eq!(plain.name, "Test Mod 1");
+        assert!(plain.files.is_none());
     }
 
     #[test]
     fn parses_trailing_slash_rules() {
         let library: Library = serde_json::from_str(TEST_LIBRARY).unwrap();
-        let files = library.mods["Test Mod 2"].files.as_ref().unwrap();
+        let files = library.mods["test_mod_2-0b5e"].files.as_ref().unwrap();
 
         let rule = |source: &str| {
             files

@@ -1,9 +1,9 @@
 {
   "name": "Test Profile",
   "mods": [
-    { "name": "CLEO 5.4.0", "active": true },
-    { "name": "Modloader", "active": true },
-    { "name": "Test Mod 1", "active": true },
-    { "name": "Test Mod 2", "active": true }
+    { "id": "cleo_5_4_0-4f2a", "active": true },
+    { "id": "modloader-91c3", "active": true },
+    { "id": "test_mod_1-77de", "active": true },
+    { "id": "test_mod_2-0b5e", "active": true }
   ]
 }

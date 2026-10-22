@@ -7,6 +7,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// name. Falls back to a timestamp-based slug if nothing alphanumeric
 /// survives (e.g. a name made entirely of emoji/punctuation).
 pub fn slugify(name: &str) -> String {
+    slugify_or(name, "profile")
+}
+
+/// Like `slugify`, with `fallback` as the prefix of the timestamp-based slug.
+pub fn slugify_or(name: &str, fallback: &str) -> String {
     let mut slug = String::new();
     let mut last_was_separator = false;
     for c in name.trim().chars() {
@@ -24,10 +29,21 @@ pub fn slugify(name: &str) -> String {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        format!("profile_{ts}")
+        format!("{fallback}_{ts}")
     } else {
         slug
     }
+}
+
+/// Four random hex digits, to make handles unique across libraries. Uses the
+/// randomly seeded hasher from `std`, so no extra dependency is needed.
+pub fn random_suffix() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    format!(
+        "{:04x}",
+        RandomState::new().build_hasher().finish() & 0xffff
+    )
 }
 
 /// Returns `base`, or `base_2`, `base_3`, ... for the first one that
@@ -51,6 +67,21 @@ mod tests {
         assert_eq!(slugify("Test Profile"), "test_profile");
         assert_eq!(slugify("  My -- Cool_Profile!  "), "my_cool_profile");
         assert!(slugify("!!!").starts_with("profile_"));
+    }
+
+    #[test]
+    fn slugify_or_uses_the_given_fallback() {
+        assert!(slugify_or("!!!", "mod").starts_with("mod_"));
+        assert_eq!(slugify_or("Real Name", "mod"), "real_name");
+    }
+
+    #[test]
+    fn random_suffix_is_four_hex_digits() {
+        for _ in 0..50 {
+            let suffix = random_suffix();
+            assert_eq!(suffix.len(), 4, "{suffix}");
+            assert!(suffix.chars().all(|c| c.is_ascii_hexdigit()), "{suffix}");
+        }
     }
 
     #[test]

@@ -1,6 +1,7 @@
 {
   "mods": {
-    "CLEO 5.4.0": {
+    "cleo_5_4_0-4f2a": {
+      "name": "CLEO 5.4.0",
       "files": [
         { "source": "cleo", "target": "cleo" },
         { "source": "CLEO.asi", "target": "CLEO.asi" },
@@ -9,13 +10,18 @@
         { "source": "vorbisHooked.dll", "target": "vorbisHooked.dll" }
       ]
     },
-    "Modloader": {
+    "modloader-91c3": {
+      "name": "Modloader",
       "files": [
         { "source": "modloader", "target": "modloader" },
         { "source": "modloader.asi", "target": "modloader.asi" }
       ]
     },
-    "Test Mod 2": {
+    "test_mod_1-77de": {
+      "name": "Test Mod 1"
+    },
+    "test_mod_2-0b5e": {
+      "name": "Test Mod 2",
       "files": [
         { "source": "contents_dir/", "target": "merged_dir/" },
         { "source": "contents_dir_b/", "target": "merged_dir_b" },

@@ -7,7 +7,7 @@ fn main() -> Result<()> {
 
     // samml [app_manifest.json] clean
     // samml [app_manifest.json] list
-    // samml [app_manifest.json] <deploy|launch|run> <profile_slug>
+    // samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>
     let (manifest_path, command, profile_slug) = match args.len() {
         2 if matches!(args[1].as_str(), "clean" | "list" | "mods") => {
             (PathBuf::from("app_manifest.json"), args[1].clone(), None)
@@ -26,14 +26,14 @@ fn main() -> Result<()> {
             Some(args[3].clone()),
         ),
         _ => bail!(
-            "usage: samml [app_manifest.json] <deploy|launch|run> <profile_slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] mods\n       samml [app_manifest.json] clean"
+            "usage: samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] mods\n       samml [app_manifest.json] clean"
         ),
     };
 
     let app = config::load_app_manifest(&manifest_path)?;
 
     match command.as_str() {
-        "deploy" | "launch" | "run" => {
+        "show" | "deploy" | "launch" | "run" => {
             let slug = profile_slug.as_deref().unwrap();
             let profile =
                 profiles::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
@@ -43,26 +43,24 @@ fn main() -> Result<()> {
                     )
                 })?;
 
-            let missing = resolve::missing_mods(&app.staging_dir, &profile)?;
             println!(
                 "Profile '{}' ({slug}) - {} mod(s):",
                 profile.name,
                 profile.mods.len()
             );
-            for m in &profile.mods {
+            for m in resolve::describe_profile(&app.staging_dir, &profile)? {
                 println!(
                     "  [{}] {}{}",
                     if m.active { "x" } else { " " },
-                    m.name,
-                    if missing.contains(&m.name) {
-                        "  (MISSING from staging)"
-                    } else {
-                        ""
-                    }
+                    m.name.as_deref().unwrap_or(&m.id),
+                    m.problem
+                        .map(|p| format!("  (PROBLEM: {p})"))
+                        .unwrap_or_default()
                 );
             }
 
             match command.as_str() {
+                "show" => {}
                 "deploy" => deploy(&app, slug, &profile)?,
                 "launch" => launch(&app)?,
                 "run" => {
@@ -95,11 +93,11 @@ fn main() -> Result<()> {
             }
             for m in mods {
                 let note = match (&m.problem, &m.files) {
-                    (Some(problem), _) => format!("  (UNUSABLE: {problem})"),
+                    (Some(problem), _) => format!("  (PROBLEM: {problem})"),
                     (None, Some(files)) => format!("  ({} file rule(s))", files.len()),
                     (None, None) => String::new(),
                 };
-                println!("{}{note}", m.name);
+                println!("{}  [{}]{note}", m.name, m.id);
             }
         }
         "clean" => {

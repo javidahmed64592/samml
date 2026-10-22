@@ -197,9 +197,9 @@ mod tests {
             .join(relative)
     }
 
-    fn a_mod(name: &str) -> ProfileMod {
+    fn a_mod(id: &str) -> ProfileMod {
         ProfileMod {
-            name: name.into(),
+            id: id.into(),
             active: true,
         }
     }
@@ -315,7 +315,7 @@ mod tests {
         save_profile(dir.path(), &slug, &profile).unwrap();
 
         let loaded = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
-        let names: Vec<_> = loaded.mods.iter().map(|m| m.name.as_str()).collect();
+        let names: Vec<_> = loaded.mods.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(names, ["One", "Two"]);
         let files: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(files.len(), 1, "only the profile file remains");

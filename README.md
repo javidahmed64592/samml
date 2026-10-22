@@ -48,17 +48,17 @@ The folder name is the mod's name. It is also the folder the mod appears under i
 Folders starting with a `.` are ignored.
 
 You can drop a new folder into `${STAGING_DIR}` at any time and it becomes available to every profile.
-Renaming a mod renames its folder and updates every profile that uses it. Because the in-game folder changes too, redeploy afterwards.
+Renaming a mod renames its folder. Profiles refer to mods by a stable id (below), so no profile needs updating, but the in-game folder changes too, so redeploy afterwards.
 
 ### Library file
 
-By default a mod is deployed as a whole to `${GAME_DIR}/modloader/<name>`.
-Mods that need files in other places (CLEO, modloader itself, and many others) list them in `${STAGING_DIR}/.samml_library.json`, keyed by mod name:
+`${STAGING_DIR}/.samml_library.json` lists the mods, keyed by a stable **id**, with each mod's name and, if it needs them, its deploy rules:
 
 ```json
 {
   "mods": {
-    "CLEO 5.4.0": {
+    "cleo_5_4_0-7287": {
+      "name": "CLEO 5.4.0",
       "files": [
         { "source": "cleo", "target": "cleo" },
         { "source": "CLEO.asi", "target": "CLEO.asi" },
@@ -67,21 +67,21 @@ Mods that need files in other places (CLEO, modloader itself, and many others) l
         { "source": "vorbisHooked.dll", "target": "vorbisHooked.dll" }
       ]
     },
-    "Modloader": {
-      "files": [
-        { "source": "modloader", "target": "modloader" },
-        { "source": "modloader.asi", "target": "modloader.asi" }
-      ]
+    "widescreen_fix-9906": {
+      "name": "Widescreen Fix"
     }
   }
 }
 ```
 
-- `source`: a path inside the mod's folder.
-- `target`: a path inside `${GAME_DIR}`.
+- `name`: The mod's folder in `${STAGING_DIR}`. See above for what makes a valid name.
+- `files`: Where the mod's files go. Omit it (or leave it empty) to deploy the whole mod to `${GAME_DIR}/modloader/<name>`.
+  - `source`: a path inside the mod's folder.
+  - `target`: a path inside `${GAME_DIR}`.
+  - Paths must be relative and cannot contain `..`. Anything not listed is ignored when `files` is given.
 
-Paths must be relative and cannot contain `..`.
-Any file or folder not listed is ignored when `files` is given. An empty or missing `files` list means the whole mod is deployed to `modloader/<name>`.
+The id is made from the mod's name when it is first added (a slug plus four random characters) and never changes, even if the mod is renamed.
+You do not need to write ids yourself: a folder dropped into `${STAGING_DIR}` is given one the next time the library is listed.
 
 Because the mods and their rules are all inside `${STAGING_DIR}`, zipping that folder backs up your whole library.
 
@@ -127,19 +127,19 @@ It does not contain any deployment paths; those belong to the mods, so any numbe
 {
   "name": "Default",
   "mods": [
-    { "name": "CLEO 5.4.0", "active": true },
-    { "name": "Modloader", "active": true },
-    { "name": "Widescreen Fix", "active": true },
-    { "name": "Ragdoll", "active": false }
+    { "id": "cleo_5_4_0-7287", "active": true },
+    { "id": "modloader-bf47", "active": true },
+    { "id": "widescreen_fix-9906", "active": true },
+    { "id": "ragdoll-ddc0", "active": false }
   ]
 }
 ```
 
 - `name`: The profile's display name.
-- `mods`: The mods to deploy, in order. Each has the `name` of a mod in the library and an `active` flag; set `active` to false to leave it out without losing its place.
+- `mods`: The mods to deploy, in order. Each has the `id` of a mod in the library and an `active` flag; set `active` to false to leave it out without losing its place.
 
 Mods are deployed in the order listed. **CLEO and Modloader must come first**, because other mods are placed inside the `modloader/` folder that Modloader creates and many need CLEO.
-If a profile lists a mod that is not in `${STAGING_DIR}`, deploying fails and names the missing mods.
+If a profile lists a mod that is not in the library, or whose folder is missing from `${STAGING_DIR}`, deploying fails and names the problem mods.
 
 A mod without `files` is linked whole to `modloader/<name>`:
 
