@@ -1,34 +1,36 @@
 //! Validation and joining of user-supplied relative paths (mod folders,
-//! file-rule sources and targets, ids). Anything typed into the UI or a
+//! file-rule sources and targets, mod names). Anything typed into the UI or a
 //! hand-edited profile goes through here before it touches the disk, so a
 //! path can never climb out of STAGING_DIR or GAME_DIR.
 
 use anyhow::{Result, bail};
 use std::path::{Component, Path, PathBuf};
 
-/// A single path component, such as a mod's folder id: no separators, not
-/// `.`/`..`, not hidden.
+/// Longest single file or folder name Linux filesystems allow, in bytes.
+const MAX_COMPONENT_BYTES: usize = 255;
+
+/// A single path component, such as a mod's name (which is also its folder
+/// name in game). Errors say what is wrong, since they are shown to players.
 pub fn validate_component(value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.starts_with('.')
-        || value.contains(['/', '\\', '\0'])
-        || value.trim() != value
-    {
-        bail!("'{value}' is not a valid folder name");
+    if value.is_empty() {
+        bail!("cannot be empty");
+    }
+    if value.trim() != value {
+        bail!("cannot start or end with a space");
+    }
+    if let Some(c) = value.chars().find(|c| matches!(c, '/' | '\\')) {
+        bail!("cannot contain '{c}'");
+    }
+    if value.chars().any(char::is_control) {
+        bail!("cannot contain control characters");
+    }
+    if value.starts_with('.') {
+        bail!("cannot start with a '.' (those folders are hidden)");
+    }
+    if value.len() > MAX_COMPONENT_BYTES {
+        bail!("is too long (at most {MAX_COMPONENT_BYTES} bytes)");
     }
     Ok(())
-}
-
-/// The folder-safe version of a display name, keeping the name readable:
-/// path separators and control characters are removed, leading dots
-/// stripped and the ends trimmed. A name that is already a valid component
-/// comes back unchanged. May be empty if nothing usable is left.
-pub fn clean_component(name: &str) -> String {
-    let kept: String = name
-        .chars()
-        .filter(|c| !matches!(c, '/' | '\\') && !c.is_control())
-        .collect();
-    kept.trim().trim_start_matches('.').trim_start().to_string()
 }
 
 /// A relative path that stays inside its base directory: non-empty, no
@@ -76,27 +78,30 @@ mod tests {
 
     #[test]
     fn components_must_be_a_single_plain_name() {
-        for ok in ["cool_mod", "Test Mod 1", "cleo-5.4.0"] {
+        for ok in [
+            "cool_mod",
+            "Test Mod 1",
+            "cleo-5.4.0",
+            "a  b",
+            "Mod (v2) [HD]!",
+        ] {
             assert!(validate_component(ok).is_ok(), "{ok:?}");
-        }
-        for bad in ["", ".", "..", ".hidden", "a/b", "a\\b", " pad", "pad "] {
-            assert!(validate_component(bad).is_err(), "{bad:?}");
         }
     }
 
     #[test]
-    fn clean_component_keeps_names_readable() {
-        assert_eq!(clean_component("Cool Car Pack"), "Cool Car Pack");
-        assert_eq!(clean_component("  Cool Car Pack  "), "Cool Car Pack");
-        assert_eq!(clean_component("a/b\\c"), "abc");
-        assert_eq!(clean_component("..hidden"), "hidden");
-        assert_eq!(clean_component("tab\there"), "tabhere");
-        assert_eq!(clean_component("///"), "");
-        // valid components are left exactly as they are
-        for ok in ["Test Mod 1", "cleo-5.4.0", "a  b"] {
-            assert!(validate_component(ok).is_ok());
-            assert_eq!(clean_component(ok), ok);
-        }
+    fn invalid_components_say_why() {
+        let reason = |v: &str| validate_component(v).unwrap_err().to_string();
+        assert!(reason("").contains("empty"));
+        assert!(reason(" pad").contains("start or end with a space"));
+        assert!(reason("pad ").contains("start or end with a space"));
+        assert!(reason("a/b").contains("'/'"));
+        assert!(reason("a\\b").contains("'\\'"));
+        assert!(reason("tab\there").contains("control characters"));
+        assert!(reason(".hidden").contains("start with a '.'"));
+        assert!(reason("..").contains("start with a '.'"));
+        assert!(reason(&"x".repeat(256)).contains("too long"));
+        assert!(validate_component(&"x".repeat(255)).is_ok());
     }
 
     #[test]

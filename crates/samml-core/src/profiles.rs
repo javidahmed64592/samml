@@ -6,7 +6,7 @@
 //! profile is not done here; that is `mods` (load, edit, then `save_profile`).
 
 use crate::manifest::{Profile, ProfileInfo};
-use crate::{mods, slug};
+use crate::slug;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,9 +54,8 @@ fn validate_name(name: &str) -> Result<String> {
 pub fn load_profile(path: &Path) -> Result<Profile> {
     let text =
         fs::read_to_string(path).with_context(|| format!("reading profile {}", path.display()))?;
-    let mut profile: Profile = serde_json::from_str(&text)
+    let profile: Profile = serde_json::from_str(&text)
         .with_context(|| format!("parsing profile {}", path.display()))?;
-    mods::assign_missing_ids(&mut profile);
     Ok(profile)
 }
 
@@ -193,7 +192,6 @@ mod tests {
     fn a_mod(name: &str) -> ModManifest {
         ModManifest {
             name: name.into(),
-            id: name.into(),
             mod_path: format!("mods/{name}"),
             active: true,
             files: None,
@@ -207,13 +205,6 @@ mod tests {
         let profile = load_profile(&repo_path("tests/profiles/test_profile.json")).unwrap();
         assert_eq!(profile.name, "Test Profile");
         assert_eq!(profile.manifests.len(), 4);
-    }
-
-    #[test]
-    fn loading_a_profile_without_ids_fills_them_in() {
-        let profile = load_profile(&repo_path("tests/profiles/test_profile.json")).unwrap();
-        let ids: Vec<_> = profile.manifests.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, ["CLEO 5.4.0", "Modloader", "Test Mod 1", "Test Mod 2"]);
     }
 
     #[test]

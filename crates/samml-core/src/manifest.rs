@@ -23,13 +23,9 @@ pub struct FileRule {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModManifest {
-    /// Display name; free text, never used as a path.
+    /// The mod's name. Also the folder it appears under in `modloader/` (and
+    /// so in game) when `files` is omitted, so it must be a valid folder name.
     pub name: String,
-    /// Immutable, folder-safe handle; the default deploy folder under
-    /// `modloader/`. Empty only in profiles written before ids existed;
-    /// loading a profile fills it in.
-    #[serde(default)]
-    pub id: String,
     pub mod_path: String,
     #[serde(default)]
     pub active: bool,

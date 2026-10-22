@@ -203,7 +203,7 @@ fn resolve_rule(
 }
 
 /// Deploy a single mod: either its explicit `files` rules, or (when `files`
-/// is omitted entirely) the whole mod folder as a unit to modloader/<id>.
+/// is omitted entirely) the whole mod folder as a unit to modloader/<name>.
 ///
 /// Paths are validated first: a hand-edited profile gets the same checks as
 /// one edited through the app.
@@ -240,9 +240,9 @@ fn deploy_mod(
                     m.name
                 );
             }
-            paths::validate_component(&m.id)
-                .with_context(|| format!("{}: invalid mod id", m.name))?;
-            let link_path = modloader_dir.join(&m.id);
+            paths::validate_component(&m.name)
+                .with_context(|| format!("'{}' cannot be used as a folder name", m.name))?;
+            let link_path = modloader_dir.join(&m.name);
             link(&mod_root, &link_path, receipt, game_dir)?;
         }
     }
@@ -360,7 +360,6 @@ mod tests {
     fn mod_with_rules(name: &str, path: &str, files: Vec<FileRule>) -> ModManifest {
         ModManifest {
             name: name.into(),
-            id: name.into(),
             mod_path: path.into(),
             active: true,
             files: Some(files),
@@ -370,7 +369,6 @@ mod tests {
     fn plain_mod(name: &str, path: &str) -> ModManifest {
         ModManifest {
             name: name.into(),
-            id: name.into(),
             mod_path: path.into(),
             active: true,
             files: None,
@@ -640,17 +638,15 @@ mod tests {
     }
 
     #[test]
-    fn default_deploy_uses_the_id_not_the_display_name() {
+    fn default_deploy_uses_the_mod_name_as_the_folder() {
         let env = Env::new();
         env.stage("modloader/modloader/modloader.asi", "loader");
         env.stage("mods/cool_cars/file.txt", "hi");
-        let mut cars = plain_mod("Cool Cars!", "mods/cool_cars");
-        cars.id = "cool_cars".into();
+        let cars = plain_mod("Cool Cars!", "mods/cool_cars");
 
         deploy(&env.app, "p", &[modloader(), cars]).unwrap();
 
-        assert!(env.game("modloader/cool_cars").is_symlink());
-        assert!(!env.game("modloader/Cool Cars!").exists());
+        assert!(env.game("modloader/Cool Cars!").is_symlink());
     }
 
     #[test]
@@ -671,10 +667,9 @@ mod tests {
         let bad_source = mod_with_rules("S", "m", vec![rule("../outside.txt", "x")]);
         assert!(deploy(&env.app, "p", &[bad_source]).is_err());
 
-        let mut bad_id = plain_mod("I", "m");
-        bad_id.id = "../up".into();
-        let err = deploy(&env.app, "p", &[modloader(), bad_id]).unwrap_err();
-        assert!(format!("{err:#}").contains("invalid mod id"));
+        let bad_name = plain_mod("../up", "m");
+        let err = deploy(&env.app, "p", &[modloader(), bad_name]).unwrap_err();
+        assert!(format!("{err:#}").contains("cannot be used as a folder name"));
     }
 
     #[test]
