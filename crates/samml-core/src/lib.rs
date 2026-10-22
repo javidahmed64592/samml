@@ -181,4 +181,36 @@ mod tests {
     fn slugify_gives_expected_slug() {
         assert_eq!(slugify("Test Profile"), "test_profile");
     }
+
+    #[test]
+    fn unique_slug_appends_number() {
+        let profiles_dir = repo_path("tests/profiles");
+        let base_slug = "test_profile";
+        let unique = unique_slug(&profiles_dir, base_slug);
+        assert_eq!(unique, "test_profile_2");
+    }
+
+    #[test]
+    fn unique_slug_returns_base_if_available() {
+        let profiles_dir = repo_path("tests/profiles");
+        let base_slug = "new_profile";
+        let unique = unique_slug(&profiles_dir, base_slug);
+        assert_eq!(unique, "new_profile");
+    }
+
+    #[test]
+    fn finds_profile_by_slug() {
+        let profiles_dir = repo_path("tests/profiles");
+        let profile = find_profile_by_slug(&profiles_dir, "test_profile")
+            .unwrap()
+            .expect("test_profile should exist");
+        assert_eq!(profile.name, "Test Profile");
+    }
+
+    #[test]
+    fn find_profile_by_slug_returns_none_for_unknown_slug() {
+        let profiles_dir = repo_path("tests/profiles");
+        let profile = find_profile_by_slug(&profiles_dir, "no_such_profile").unwrap();
+        assert!(profile.is_none());
+    }
 }
