@@ -23,3 +23,6 @@ target
 staging/
 profiles/
 !tests/profiles/
+
+# Local app manifest with real paths; copy app_manifest.example.json
+app_manifest.json
