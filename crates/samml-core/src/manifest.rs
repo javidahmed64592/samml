@@ -2,6 +2,7 @@
 //! No filesystem access or behaviour lives here.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // App manifest
@@ -14,30 +15,55 @@ pub struct AppManifest {
     pub steam_app_id: Option<u32>,
 }
 
-// Mod manifests
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Mod library: every folder in STAGING_DIR is a mod, named after its folder.
+// Settings are only stored for mods that need something other than the
+// default of deploying the whole folder to `modloader/<name>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileRule {
     pub source: String,
     pub target: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModManifest {
-    /// The mod's name. Also the folder it appears under in `modloader/` (and
-    /// so in game) when `files` is omitted, so it must be a valid folder name.
-    pub name: String,
-    pub mod_path: String,
-    #[serde(default)]
-    pub active: bool,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ModSettings {
+    /// Where the mod's files go. `None` deploys the whole mod folder to
+    /// `modloader/<name>`.
     #[serde(default)]
     pub files: Option<Vec<FileRule>>,
 }
 
-// Mod profiles
+/// The contents of `STAGING_DIR/.samml_library.json`, keyed by mod name.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Library {
+    #[serde(default)]
+    pub mods: BTreeMap<String, ModSettings>,
+}
+
+/// A mod as the UI sees it: a folder in staging joined with its settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LibraryMod {
+    /// The folder name, which is also the name shown in game.
+    pub name: String,
+    pub files: Option<Vec<FileRule>>,
+    /// Why the folder cannot be used as a mod yet (e.g. its name is not
+    /// valid), or `None` if it is fine.
+    pub problem: Option<String>,
+}
+
+// Mod profiles: a choice of mods from the library, in deploy order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileMod {
+    /// The library mod's name.
+    pub name: String,
+    #[serde(default)]
+    pub active: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
     pub name: String,
-    pub manifests: Vec<ModManifest>,
+    #[serde(default)]
+    pub mods: Vec<ProfileMod>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,24 +72,25 @@ pub struct ProfileInfo {
     pub name: String,
 }
 
+/// What deploy needs to know about one mod: a profile entry joined with the
+/// library. Only active mods are resolved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeployMod {
+    pub name: String,
+    pub files: Option<Vec<FileRule>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const APP_MANIFEST: &str = include_str!("../../../tests/app_manifest.json");
     const TEST_PROFILE: &str = include_str!("../../../tests/profiles/test_profile.json");
-
-    fn load_app_manifest() -> AppManifest {
-        serde_json::from_str(APP_MANIFEST).expect("app manifest should parse")
-    }
-
-    fn load_profile() -> Profile {
-        serde_json::from_str(TEST_PROFILE).expect("test profile should parse")
-    }
+    const TEST_LIBRARY: &str = include_str!("../../../tests/library/.samml_library.json");
 
     #[test]
     fn parses_app_manifest() {
-        let manifest = load_app_manifest();
+        let manifest: AppManifest = serde_json::from_str(APP_MANIFEST).unwrap();
         assert!(!manifest.game_dir.as_os_str().is_empty());
         assert!(!manifest.staging_dir.as_os_str().is_empty());
         assert!(!manifest.profiles_dir.as_os_str().is_empty());
@@ -72,24 +99,26 @@ mod tests {
 
     #[test]
     fn parses_test_profile() {
-        let profile = load_profile();
+        let profile: Profile = serde_json::from_str(TEST_PROFILE).unwrap();
         assert_eq!(profile.name, "Test Profile");
-        assert_eq!(profile.manifests.len(), 4);
-        assert!(profile.manifests.iter().all(|m| m.active));
+        let names: Vec<_> = profile.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(
+            names,
+            ["CLEO 5.4.0", "Modloader", "Test Mod 1", "Test Mod 2"]
+        );
+        assert!(profile.mods.iter().all(|m| m.active));
+    }
 
-        // Mods without a `files` array deploy to the modloader directory by default
-        assert!(profile.manifests[2].files.is_none());
+    #[test]
+    fn mods_without_settings_use_the_default_deployment() {
+        let library: Library = serde_json::from_str(TEST_LIBRARY).unwrap();
+        assert!(!library.mods.contains_key("Test Mod 1"));
     }
 
     #[test]
     fn parses_trailing_slash_rules() {
-        let profile = load_profile();
-        let mod2 = profile
-            .manifests
-            .iter()
-            .find(|m| m.name == "Test Mod 2")
-            .expect("Test Mod 2 should exist");
-        let files = mod2.files.as_ref().expect("Test Mod 2 should have files");
+        let library: Library = serde_json::from_str(TEST_LIBRARY).unwrap();
+        let files = library.mods["Test Mod 2"].files.as_ref().unwrap();
 
         let rule = |source: &str| {
             files

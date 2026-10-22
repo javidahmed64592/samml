@@ -76,11 +76,9 @@ fn require_profile(profiles_dir: &Path, slug: &str) -> Result<Profile> {
         .with_context(|| format!("profile '{slug}' not found in {}", profiles_dir.display()))
 }
 
-/// Lists every profile in `profiles_dir`, sorted by name. Reads each file to
-/// get its canonical `name` - cheap at the scale of a handful of profile
-/// files, and the only way to show accurate names without assuming the
-/// filename matches them.
-pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileInfo>> {
+/// Every profile in `profiles_dir` with its slug, sorted by name. A missing
+/// directory has no profiles.
+pub fn load_all(profiles_dir: &Path) -> Result<Vec<(String, Profile)>> {
     let mut profiles = Vec::new();
     if !profiles_dir.is_dir() {
         return Ok(profiles);
@@ -101,15 +99,25 @@ pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileInfo>> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("")
                 .to_string();
-            let profile = load_profile(&path)?;
-            profiles.push(ProfileInfo {
-                slug,
-                name: profile.name,
-            });
+            profiles.push((slug, load_profile(&path)?));
         }
     }
-    profiles.sort_by_cached_key(|p| (p.name.to_lowercase(), p.slug.clone()));
+    profiles.sort_by_cached_key(|(slug, p)| (p.name.to_lowercase(), slug.clone()));
     Ok(profiles)
+}
+
+/// Lists every profile in `profiles_dir`, sorted by name. Reads each file to
+/// get its canonical `name` - cheap at the scale of a handful of profile
+/// files, and the only way to show accurate names without assuming the
+/// filename matches them.
+pub fn list_profiles(profiles_dir: &Path) -> Result<Vec<ProfileInfo>> {
+    Ok(load_all(profiles_dir)?
+        .into_iter()
+        .map(|(slug, profile)| ProfileInfo {
+            slug,
+            name: profile.name,
+        })
+        .collect())
 }
 
 // --- Writing -------------------------------------------------------------
@@ -141,7 +149,7 @@ pub fn create_profile(profiles_dir: &Path, name: &str) -> Result<(String, PathBu
     let name = validate_name(name)?;
     let profile = Profile {
         name: name.clone(),
-        manifests: Vec::new(),
+        mods: Vec::new(),
     };
     save_as_new(profiles_dir, &name, &profile)
 }
@@ -180,7 +188,7 @@ pub fn delete_profile(profiles_dir: &Path, slug: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::ModManifest;
+    use crate::manifest::ProfileMod;
     use tempfile::TempDir;
 
     fn repo_path(relative: &str) -> PathBuf {
@@ -189,12 +197,10 @@ mod tests {
             .join(relative)
     }
 
-    fn a_mod(name: &str) -> ModManifest {
-        ModManifest {
+    fn a_mod(name: &str) -> ProfileMod {
+        ProfileMod {
             name: name.into(),
-            mod_path: format!("mods/{name}"),
             active: true,
-            files: None,
         }
     }
 
@@ -204,7 +210,7 @@ mod tests {
     fn loads_profile() {
         let profile = load_profile(&repo_path("tests/profiles/test_profile.json")).unwrap();
         assert_eq!(profile.name, "Test Profile");
-        assert_eq!(profile.manifests.len(), 4);
+        assert_eq!(profile.mods.len(), 4);
     }
 
     #[test]
@@ -279,7 +285,7 @@ mod tests {
         assert_eq!(path, profiles_dir.join("my_profile.json"));
         let profile = load_profile(&path).unwrap();
         assert_eq!(profile.name, "My Profile");
-        assert!(profile.manifests.is_empty());
+        assert!(profile.mods.is_empty());
     }
 
     #[test]
@@ -304,12 +310,12 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (slug, _) = create_profile(dir.path(), "P").unwrap();
         let mut profile = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
-        profile.manifests = vec![a_mod("One"), a_mod("Two")];
+        profile.mods = vec![a_mod("One"), a_mod("Two")];
 
         save_profile(dir.path(), &slug, &profile).unwrap();
 
         let loaded = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
-        let names: Vec<_> = loaded.manifests.iter().map(|m| m.name.as_str()).collect();
+        let names: Vec<_> = loaded.mods.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, ["One", "Two"]);
         let files: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(files.len(), 1, "only the profile file remains");
@@ -320,14 +326,14 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (slug, _) = create_profile(dir.path(), "Old").unwrap();
         let mut profile = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
-        profile.manifests = vec![a_mod("Keep")];
+        profile.mods = vec![a_mod("Keep")];
         save_profile(dir.path(), &slug, &profile).unwrap();
 
         rename_profile(dir.path(), &slug, "New Name").unwrap();
 
         let loaded = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
         assert_eq!(loaded.name, "New Name");
-        assert_eq!(loaded.manifests.len(), 1, "mods are kept");
+        assert_eq!(loaded.mods.len(), 1, "mods are kept");
         assert_eq!(list_profiles(dir.path()).unwrap().len(), 1);
     }
 
@@ -343,7 +349,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (slug, _) = create_profile(dir.path(), "Original").unwrap();
         let mut profile = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
-        profile.manifests = vec![a_mod("One")];
+        profile.mods = vec![a_mod("One")];
         save_profile(dir.path(), &slug, &profile).unwrap();
 
         let (copy_slug, _) = duplicate_profile(dir.path(), &slug, "Copy").unwrap();
@@ -353,7 +359,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(copy.name, "Copy");
-        assert_eq!(copy.manifests.len(), 1);
+        assert_eq!(copy.mods.len(), 1);
         let original = find_profile_by_slug(dir.path(), &slug).unwrap().unwrap();
         assert_eq!(original.name, "Original", "source is untouched");
     }
