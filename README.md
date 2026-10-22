@@ -19,7 +19,7 @@ In this guide, we will use the following variables for file paths:
 
 ## App Manifest
 
-The app manifest is a JSON file named `app-manifest.json` that defines the game directory, staging directory, and the list of mod profiles.
+The app manifest is a JSON file named `app_manifest.json` that defines the game directory, staging directory, and the list of mod profiles.
 
 ```json
 {
@@ -56,7 +56,7 @@ The trailing slash convention mirrors `rsync`:
 ### Deploying CLEO + Modloader
 
 The below examples show how to deploy `CLEO 5.4.0` and `modloader` (use your preferred CLEO version).
-The manifest entries for these **must come first** in the `app-manifest.json` file to ensure that the necessary directories are created before deploying other mods.
+The manifest entries for these **must come first** in the `app_manifest.json` file to ensure that the necessary directories are created before deploying other mods.
 First, add these two mods to the staging directory so you have the following structure:
 
 ```

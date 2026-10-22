@@ -5,7 +5,7 @@ use std::process::Command;
 pub fn launch(app: &AppManifest) -> Result<()> {
     let app_id = app
         .steam_app_id
-        .context("steam_app_id is not set in app-manifest.json")?;
+        .context("steam_app_id is not set in app_manifest.json")?;
     Command::new("steam")
         .arg("-applaunch")
         .arg(app_id.to_string())

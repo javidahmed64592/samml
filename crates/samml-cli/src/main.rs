@@ -5,18 +5,18 @@ use std::path::PathBuf;
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
-    // samml [app-manifest.json] clean
-    // samml [app-manifest.json] list
-    // samml [app-manifest.json] <deploy|launch|run> <profile-slug>
+    // samml [app_manifest.json] clean
+    // samml [app_manifest.json] list
+    // samml [app_manifest.json] <deploy|launch|run> <profile-slug>
     let (manifest_path, command, profile_slug) = match args.len() {
         2 if args[1] == "clean" || args[1] == "list" => {
-            (PathBuf::from("app-manifest.json"), args[1].clone(), None)
+            (PathBuf::from("app_manifest.json"), args[1].clone(), None)
         }
         3 if args[2] == "clean" || args[2] == "list" => {
             (PathBuf::from(&args[1]), args[2].clone(), None)
         }
         3 => (
-            PathBuf::from("app-manifest.json"),
+            PathBuf::from("app_manifest.json"),
             args[1].clone(),
             Some(args[2].clone()),
         ),
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
             Some(args[3].clone()),
         ),
         _ => bail!(
-            "usage: samml [app-manifest.json] <deploy|launch|run> <profile-slug>\n       samml [app-manifest.json] new <profile name>\n       samml [app-manifest.json] list\n       samml [app-manifest.json] clean"
+            "usage: samml [app_manifest.json] <deploy|launch|run> <profile-slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] clean"
         ),
     };
 
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
         "new" => {
             let name = profile_slug
                 .as_deref()
-                .context("usage: samml [app-manifest.json] new <profile name>")?;
+                .context("usage: samml [app_manifest.json] new <profile name>")?;
             let (slug, path) = samml_core::create_profile(&app.profiles_dir, name)?;
             println!("Created profile '{name}' ({slug}) at {}", path.display());
         }
