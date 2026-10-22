@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn loads_app_manifest() {
-        let manifest = load_app_manifest(&repo_path("app_manifest.json")).unwrap();
+        let manifest = load_app_manifest(&repo_path("tests/app_manifest.json")).unwrap();
         assert!(!manifest.game_dir.as_os_str().is_empty());
         assert!(!manifest.staging_dir.as_os_str().is_empty());
         assert!(!manifest.profiles_dir.as_os_str().is_empty());

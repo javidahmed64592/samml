@@ -35,7 +35,7 @@ pub struct Profile {
     pub manifests: Vec<ModManifest>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProfileInfo {
     pub slug: String,
     pub name: String,
@@ -45,7 +45,7 @@ pub struct ProfileInfo {
 mod tests {
     use super::*;
 
-    const APP_MANIFEST: &str = include_str!("../../../app_manifest.json");
+    const APP_MANIFEST: &str = include_str!("../../../tests/app_manifest.json");
     const TEST_PROFILE: &str = include_str!("../../../tests/profiles/test_profile.json");
 
     fn load_app_manifest() -> AppManifest {

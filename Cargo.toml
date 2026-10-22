@@ -15,6 +15,7 @@ authors = ["Javid Ahmed <javidahmed@icloud.com>"]
 anyhow = "1.0.104"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+tempfile = "3"
 samml-core = { path = "crates/samml-core" }
 
 [workspace.metadata.wix]

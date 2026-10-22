@@ -285,3 +285,294 @@ pub fn deploy(app: &AppManifest, mods: &[ModManifest]) -> Result<()> {
 pub fn clean(app: &AppManifest) -> Result<()> {
     teardown(&app.game_dir)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::manifest::FileRule;
+    use tempfile::TempDir;
+
+    struct Env {
+        _root: TempDir,
+        app: AppManifest,
+    }
+
+    impl Env {
+        fn new() -> Self {
+            let root = TempDir::new().unwrap();
+            let game_dir = root.path().join("game");
+            let staging_dir = root.path().join("staging");
+            fs::create_dir_all(&game_dir).unwrap();
+            fs::create_dir_all(&staging_dir).unwrap();
+            let app = AppManifest {
+                game_dir,
+                staging_dir,
+                profiles_dir: root.path().join("profiles"),
+                steam_app_id: None,
+            };
+            Env { _root: root, app }
+        }
+
+        fn game(&self, rel: &str) -> PathBuf {
+            self.app.game_dir.join(rel)
+        }
+
+        fn stage(&self, rel: &str, contents: &str) {
+            let path = self.app.staging_dir.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+
+        fn write_game(&self, rel: &str, contents: &str) {
+            let path = self.game(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, contents).unwrap();
+        }
+    }
+
+    fn rule(source: &str, target: &str) -> FileRule {
+        FileRule {
+            source: source.into(),
+            target: target.into(),
+        }
+    }
+
+    fn mod_with_rules(name: &str, path: &str, files: Vec<FileRule>) -> ModManifest {
+        ModManifest {
+            name: name.into(),
+            mod_path: path.into(),
+            active: true,
+            files: Some(files),
+        }
+    }
+
+    fn plain_mod(name: &str, path: &str) -> ModManifest {
+        ModManifest {
+            name: name.into(),
+            mod_path: path.into(),
+            active: true,
+            files: None,
+        }
+    }
+
+    fn modloader() -> ModManifest {
+        mod_with_rules(
+            "Modloader",
+            "modloader",
+            vec![rule("modloader", "modloader")],
+        )
+    }
+
+    #[test]
+    fn resolves_rsync_style_rules() {
+        let env = Env::new();
+        env.stage("m/dir/a.txt", "a");
+        let root = env.app.staging_dir.join("m");
+        let game = &env.app.game_dir;
+
+        // trailing slash on source: contents merged into target
+        let r = resolve_rule(&root, game, "dir/", "merged/").unwrap();
+        assert_eq!(r, vec![(game.join("merged/a.txt"), root.join("dir/a.txt"))]);
+        // no slashes: item placed at the exact path (rename)
+        let r = resolve_rule(&root, game, "dir", "renamed").unwrap();
+        assert_eq!(r, vec![(game.join("renamed"), root.join("dir"))]);
+        // trailing slash on target: item placed inside, keeping its name
+        let r = resolve_rule(&root, game, "dir", "container/").unwrap();
+        assert_eq!(r, vec![(game.join("container/dir"), root.join("dir"))]);
+    }
+
+    #[test]
+    fn deploys_default_mod_into_modloader() {
+        let env = Env::new();
+        env.stage("modloader/modloader/modloader.asi", "loader");
+        env.stage("mods/Cool/file.txt", "hi");
+        let mods = [modloader(), plain_mod("Cool", "mods/Cool")];
+
+        deploy(&env.app, &mods).unwrap();
+
+        assert!(env.game("modloader").is_symlink());
+        assert_eq!(
+            fs::read_to_string(env.game("modloader/Cool/file.txt")).unwrap(),
+            "hi"
+        );
+        assert!(env.game(RECEIPT_FILE).is_file());
+    }
+
+    #[test]
+    fn deploys_explicit_rules() {
+        let env = Env::new();
+        env.stage("m/contents/a.txt", "a");
+        env.stage("m/whole/b.txt", "b");
+        env.stage("m/file.txt", "c");
+        let mods = [mod_with_rules(
+            "M",
+            "m",
+            vec![
+                rule("contents/", "merged/"),
+                rule("whole", "renamed"),
+                rule("file.txt", "container/"),
+            ],
+        )];
+
+        deploy(&env.app, &mods).unwrap();
+
+        assert_eq!(fs::read_to_string(env.game("merged/a.txt")).unwrap(), "a");
+        assert_eq!(fs::read_to_string(env.game("renamed/b.txt")).unwrap(), "b");
+        assert_eq!(
+            fs::read_to_string(env.game("container/file.txt")).unwrap(),
+            "c"
+        );
+        // contents were merged, so `merged` is a real dir, not a symlink
+        assert!(env.game("merged").is_dir() && !env.game("merged").is_symlink());
+        assert!(env.game("merged/a.txt").is_symlink());
+    }
+
+    #[test]
+    fn skips_inactive_mods() {
+        let env = Env::new();
+        env.stage("m/file.txt", "x");
+        let mut m = mod_with_rules("M", "m", vec![rule("file.txt", "file.txt")]);
+        m.active = false;
+
+        deploy(&env.app, &[m]).unwrap();
+
+        assert!(!env.game("file.txt").exists());
+    }
+
+    #[test]
+    fn default_mod_requires_modloader_first() {
+        let env = Env::new();
+        env.stage("mods/Cool/file.txt", "hi");
+
+        let err = deploy(&env.app, &[plain_mod("Cool", "mods/Cool")]).unwrap_err();
+
+        assert!(format!("{err:#}").contains("modloader/ does not exist"));
+    }
+
+    #[test]
+    fn errors_on_missing_mod_folder_or_source() {
+        let env = Env::new();
+        let err = deploy(&env.app, &[plain_mod("Ghost", "mods/Ghost")]).unwrap_err();
+        assert!(format!("{err:#}").contains("has no folder"));
+
+        env.stage("m/other.txt", "x");
+        let m = mod_with_rules("M", "m", vec![rule("missing.txt", "missing.txt")]);
+        let err = deploy(&env.app, &[m]).unwrap_err();
+        assert!(format!("{err:#}").contains("source does not exist"));
+    }
+
+    #[test]
+    fn backs_up_and_restores_stock_files() {
+        let env = Env::new();
+        env.write_game("data/stock.dat", "original");
+        env.stage("m/stock.dat", "modded");
+        let mods = [mod_with_rules(
+            "M",
+            "m",
+            vec![rule("stock.dat", "data/stock.dat")],
+        )];
+
+        deploy(&env.app, &mods).unwrap();
+        assert_eq!(
+            fs::read_to_string(env.game("data/stock.dat")).unwrap(),
+            "modded"
+        );
+        assert_eq!(
+            fs::read_to_string(env.game(".samml_backups/data/stock.dat")).unwrap(),
+            "original"
+        );
+
+        clean(&env.app).unwrap();
+        let restored = env.game("data/stock.dat");
+        assert!(!restored.is_symlink());
+        assert_eq!(fs::read_to_string(restored).unwrap(), "original");
+        assert!(!env.game(".samml_backups/data/stock.dat").exists());
+    }
+
+    #[test]
+    fn clean_removes_links_and_created_dirs_only() {
+        let env = Env::new();
+        env.write_game("data/stock.dat", "original");
+        env.stage("m/a.txt", "a");
+        env.stage("m/b.txt", "b");
+        let mods = [mod_with_rules(
+            "M",
+            "m",
+            vec![rule("a.txt", "data/a.txt"), rule("b.txt", "new/deep/b.txt")],
+        )];
+
+        deploy(&env.app, &mods).unwrap();
+        assert!(env.game("new/deep/b.txt").is_symlink());
+
+        clean(&env.app).unwrap();
+
+        assert!(!env.game("data/a.txt").exists());
+        assert!(!env.game("new").exists(), "dirs we created are removed");
+        assert!(
+            env.game("data/stock.dat").is_file(),
+            "pre-existing dirs stay"
+        );
+        // staging is untouched
+        assert!(env.app.staging_dir.join("m/a.txt").is_file());
+    }
+
+    #[test]
+    fn clean_leaves_foreign_files_in_created_dirs() {
+        let env = Env::new();
+        env.stage("m/a.txt", "a");
+        let mods = [mod_with_rules("M", "m", vec![rule("a.txt", "new/a.txt")])];
+        deploy(&env.app, &mods).unwrap();
+        env.write_game("new/user.txt", "keep me");
+
+        clean(&env.app).unwrap();
+
+        assert!(!env.game("new/a.txt").exists());
+        assert!(env.game("new/user.txt").is_file());
+    }
+
+    #[test]
+    fn clean_is_a_noop_without_a_receipt() {
+        let env = Env::new();
+        env.write_game("data/stock.dat", "original");
+
+        clean(&env.app).unwrap();
+
+        assert!(env.game("data/stock.dat").is_file());
+    }
+
+    #[test]
+    fn redeploy_replaces_previous_deployment() {
+        let env = Env::new();
+        env.stage("m/a.txt", "a");
+        env.stage("m/b.txt", "b");
+        let first = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
+        let second = [mod_with_rules("M", "m", vec![rule("b.txt", "b.txt")])];
+
+        deploy(&env.app, &first).unwrap();
+        deploy(&env.app, &second).unwrap();
+
+        assert!(!env.game("a.txt").exists());
+        assert!(env.game("b.txt").is_symlink());
+    }
+
+    #[test]
+    fn refuses_to_overwrite_an_existing_backup() {
+        let env = Env::new();
+        env.write_game("stock.dat", "original");
+        env.write_game(".samml_backups/stock.dat", "older original");
+        env.stage("m/stock.dat", "modded");
+        let mods = [mod_with_rules(
+            "M",
+            "m",
+            vec![rule("stock.dat", "stock.dat")],
+        )];
+
+        let err = deploy(&env.app, &mods).unwrap_err();
+
+        assert!(format!("{err:#}").contains("leftover inconsistent state"));
+        assert_eq!(
+            fs::read_to_string(env.game(".samml_backups/stock.dat")).unwrap(),
+            "older original"
+        );
+    }
+}
