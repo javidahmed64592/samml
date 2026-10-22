@@ -12,13 +12,13 @@ The UI manages everything. Players never open mod folders, `app_manifest.json` o
 
 ```
 crates/samml-core/   all logic; no printing, no argument parsing
+  config.rs          load the app manifest
+  deploy.rs          teardown / link / deploy (all-or-nothing) / clean
+  launch.rs          launching the game through Steam
   lib.rs             module list only
   manifest.rs        serde data types only (no functions with side effects)
-  config.rs          load the app manifest
   profiles.rs        profile files: list, create, save, rename, duplicate, delete
-  deploy.rs          teardown / link / deploy (all-or-nothing) / clean
   receipt.rs         read/write/remove the deploy receipt
-  launch.rs          launching the game through Steam
 crates/samml-cli/    thin wrapper: parses args, calls core, prints
 src-tauri/           (planned) Tauri commands, one-line calls into core
 ui/                  (planned) Leptos frontend compiled to WASM with Trunk
