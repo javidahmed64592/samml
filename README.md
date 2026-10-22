@@ -38,7 +38,8 @@ Each profile is stored in the `${PROFILES_DIR}` directory and contains an array 
 
 The manifests are JSON objects that define the deployment paths for your mods within the game directory.
 
-- `name`: The name of the mod.
+- `name`: The display name of the mod. It can be changed freely.
+- `id`: A folder-safe name that never changes; mods without `files` deploy to `modloader/<id>`. Optional in hand-written profiles: if omitted, it is taken from `name`.
 - `mod_path`: The relative path to the mod within the staging directory.
 - `active`: A boolean indicating whether the mod is active. Set to false to not deploy the mod.
 - `files`: An array of objects specifying the source and target paths for files within the mod.

@@ -4,6 +4,8 @@
 //! receipt through `receipt`; the mods and paths come from `manifest`.
 
 use crate::manifest::{AppManifest, ModManifest};
+use crate::mods::validate_rules;
+use crate::paths;
 use crate::receipt::{self, Receipt};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -175,8 +177,8 @@ fn resolve_rule(
     let merge_contents = source.ends_with('/');
     let place_inside = target.ends_with('/');
 
-    let source_path = mod_root.join(source.trim_end_matches('/'));
-    let target_path = game_dir.join(target.trim_end_matches('/'));
+    let source_path = paths::join_normalized(mod_root, source);
+    let target_path = paths::join_normalized(game_dir, target);
 
     let mut out = Vec::new();
 
@@ -201,20 +203,26 @@ fn resolve_rule(
 }
 
 /// Deploy a single mod: either its explicit `files` rules, or (when `files`
-/// is omitted entirely) the whole mod folder as a unit to modloader/<name>.
+/// is omitted entirely) the whole mod folder as a unit to modloader/<id>.
+///
+/// Paths are validated first: a hand-edited profile gets the same checks as
+/// one edited through the app.
 fn deploy_mod(
     m: &ModManifest,
     staging_dir: &Path,
     game_dir: &Path,
     receipt: &mut Receipt,
 ) -> Result<()> {
-    let mod_root = staging_dir.join(&m.mod_path);
+    paths::validate_relative(&m.mod_path)
+        .with_context(|| format!("{}: invalid mod_path '{}'", m.name, m.mod_path))?;
+    let mod_root = paths::join_normalized(staging_dir, &m.mod_path);
     if !mod_root.is_dir() {
         bail!("{} has no folder at {}", m.name, mod_root.display());
     }
 
     match &m.files {
         Some(rules) => {
+            validate_rules(rules).with_context(|| format!("{}: invalid file rules", m.name))?;
             for rule in rules {
                 for (link_path, target_path) in
                     resolve_rule(&mod_root, game_dir, &rule.source, &rule.target)?
@@ -232,7 +240,9 @@ fn deploy_mod(
                     m.name
                 );
             }
-            let link_path = modloader_dir.join(&m.name);
+            paths::validate_component(&m.id)
+                .with_context(|| format!("{}: invalid mod id", m.name))?;
+            let link_path = modloader_dir.join(&m.id);
             link(&mod_root, &link_path, receipt, game_dir)?;
         }
     }
@@ -350,6 +360,7 @@ mod tests {
     fn mod_with_rules(name: &str, path: &str, files: Vec<FileRule>) -> ModManifest {
         ModManifest {
             name: name.into(),
+            id: name.into(),
             mod_path: path.into(),
             active: true,
             files: Some(files),
@@ -359,6 +370,7 @@ mod tests {
     fn plain_mod(name: &str, path: &str) -> ModManifest {
         ModManifest {
             name: name.into(),
+            id: name.into(),
             mod_path: path.into(),
             active: true,
             files: None,
@@ -625,6 +637,63 @@ mod tests {
         clean(&env.app).unwrap();
         assert_eq!(deployed_profile(&env.app).unwrap(), None);
         assert!(!env.game(RECEIPT_FILE).exists());
+    }
+
+    #[test]
+    fn default_deploy_uses_the_id_not_the_display_name() {
+        let env = Env::new();
+        env.stage("modloader/modloader/modloader.asi", "loader");
+        env.stage("mods/cool_cars/file.txt", "hi");
+        let mut cars = plain_mod("Cool Cars!", "mods/cool_cars");
+        cars.id = "cool_cars".into();
+
+        deploy(&env.app, "p", &[modloader(), cars]).unwrap();
+
+        assert!(env.game("modloader/cool_cars").is_symlink());
+        assert!(!env.game("modloader/Cool Cars!").exists());
+    }
+
+    #[test]
+    fn rejects_paths_that_escape_staging_or_the_game_dir() {
+        let env = Env::new();
+        env.stage("m/a.txt", "a");
+        env.stage("modloader/modloader/modloader.asi", "loader");
+        fs::write(env.app.staging_dir.join("outside.txt"), "x").unwrap();
+
+        let traversal = plain_mod("T", "../escape");
+        let err = deploy(&env.app, "p", &[traversal]).unwrap_err();
+        assert!(format!("{err:#}").contains("invalid mod_path"));
+
+        let bad_target = mod_with_rules("B", "m", vec![rule("a.txt", "../../evil")]);
+        let err = deploy(&env.app, "p", &[bad_target]).unwrap_err();
+        assert!(format!("{err:#}").contains("invalid file rules"));
+
+        let bad_source = mod_with_rules("S", "m", vec![rule("../outside.txt", "x")]);
+        assert!(deploy(&env.app, "p", &[bad_source]).is_err());
+
+        let mut bad_id = plain_mod("I", "m");
+        bad_id.id = "../up".into();
+        let err = deploy(&env.app, "p", &[modloader(), bad_id]).unwrap_err();
+        assert!(format!("{err:#}").contains("invalid mod id"));
+    }
+
+    #[test]
+    fn dot_slash_target_places_items_in_the_game_folder() {
+        let env = Env::new();
+        env.stage("m/dir/a.txt", "a");
+        env.stage("m/top.txt", "t");
+        let mods = [mod_with_rules(
+            "M",
+            "m",
+            vec![rule("dir", "./"), rule("top.txt", "./")],
+        )];
+
+        deploy(&env.app, "p", &mods).unwrap();
+
+        assert_eq!(fs::read_to_string(env.game("dir/a.txt")).unwrap(), "a");
+        assert_eq!(fs::read_to_string(env.game("top.txt")).unwrap(), "t");
+        clean(&env.app).unwrap();
+        assert!(!env.game("dir").exists() && !env.game("top.txt").exists());
     }
 
     #[test]
