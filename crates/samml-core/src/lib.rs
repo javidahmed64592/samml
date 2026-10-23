@@ -9,6 +9,8 @@
 //! - `receipt`: record of what a deploy changed
 //!
 //! Operations
+//! - `import`: copying files and folders into a mod's folder
+//! - `browse`: listing what is inside a mod's folder
 //! - `profile_mods`: editing which mods a profile uses (in memory)
 //! - `usage`: renaming or deleting a mod across the library and all profiles
 //! - `resolve`: a profile's active mods joined with their deploy rules
@@ -20,8 +22,10 @@
 //! - `paths`: validating and joining user-supplied relative paths
 //! - `slug`: display name -> filename-safe handle
 
+pub mod browse;
 pub mod config;
 pub mod deploy;
+pub mod import;
 pub mod launch;
 pub mod library;
 pub mod manifest;

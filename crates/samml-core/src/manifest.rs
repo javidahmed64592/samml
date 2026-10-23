@@ -95,6 +95,62 @@ pub struct DeployMod {
     pub files: Option<Vec<FileRule>>,
 }
 
+// Importing files into a mod, and browsing what is in one.
+
+/// Where imported sources end up inside the mod's folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Placement {
+    /// Each source (file or folder) is placed inside the mod folder under
+    /// its own name.
+    Items,
+    /// A single source folder's contents are merged into the mod folder, so
+    /// the chosen folder becomes the mod's root.
+    Contents,
+}
+
+/// What to do when an imported file already exists in the mod.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConflictPolicy {
+    /// Refuse to import anything.
+    Fail,
+    /// Replace the existing files.
+    Overwrite,
+}
+
+/// What an import would do, worked out without changing anything.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportPreview {
+    pub files: usize,
+    pub bytes: u64,
+    /// Existing files (relative to the mod folder) that would be replaced.
+    pub conflicts: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportProgress {
+    pub files_done: usize,
+    pub files_total: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportReport {
+    pub files_copied: usize,
+    pub bytes_copied: u64,
+    /// Existing files (relative to the mod folder) that were replaced.
+    pub overwritten: Vec<String>,
+}
+
+/// One item in a mod folder, for the rule picker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub is_dir: bool,
+    /// Size in bytes; `None` for folders.
+    pub size: Option<u64>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

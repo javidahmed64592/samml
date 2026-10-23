@@ -23,6 +23,8 @@ crates/samml-core/   all logic; no printing, no argument parsing
   profiles.rs        profile files: list, create, save, rename, duplicate, delete
   receipt.rs         read/write/remove the deploy receipt
   -- operations
+  import.rs          copy files/folders from anywhere into a mod's folder (preview, conflicts, progress, rollback)
+  browse.rs          list what is inside a mod's folder, one level at a time (rule picker)
   profile_mods.rs    edit which mods a profile uses, in memory (add/remove/move/toggle)
   usage.rs           library + profiles together: who uses a mod; delete everywhere
   resolve.rs         a profile's entries joined with the library: describe (names, problems) and resolve for deploy
@@ -75,7 +77,8 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 - **Problems are reported, not hidden**: a profile entry whose id is not in the library, or whose folder is missing or unusable, is shown with the reason (`resolve::describe_profile`), and deploying fails naming every such active mod.
 - **Paths**: all user-entered paths are validated: relative only, no `..`, no escaping STAGING_DIR or GAME_DIR. Deploy re-validates, so hand-edited files get the same checks.
 - **Rules**: an empty `files` list means the same as no list (deploy to `modloader`). A target of `./` means "inside the game folder".
-- **Importing** copies from native paths on the Rust side (Tauri dialog and drag-and-drop give paths), so file bytes never pass through the webview.
+- **Importing** copies from native paths on the Rust side (Tauri dialog and drag-and-drop give paths), so file bytes never pass through the webview. `import_into_mod` takes a `Placement`: `Items` puts each chosen file/folder inside the mod under its own name; `Contents` merges one chosen folder's contents into the mod root (so a downloaded mod folder becomes the mod). `preview_import` reports file count, size and which existing files would be replaced, without changing anything; with `ConflictPolicy::Fail` any conflict aborts the import, `Overwrite` replaces them. Symlinks in the source are refused, and a source can't be, contain, or sit inside the mod's own folder. If a copy fails, everything the import created is removed (replaced files stay replaced). A progress callback runs after each file.
+- **Browsing** a mod (`browse::list_mod_files`) lists one folder level at a time, folders first, and refuses `..`, absolute paths and symlinks leading outside the mod.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.
 
 ## Requirements
@@ -113,7 +116,7 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 2. ~~Profile persistence: atomic `save_profile`; rename, duplicate, delete.~~ Done (`profiles.rs`).
 3. ~~Name and path validation; editing a profile's mods.~~ Done (`paths.rs`, `rules.rs`, `profile_mods.rs`).
 4. ~~Mod library: mods independent of profiles, stable ids, library file, delete everywhere.~~ Done (`library.rs`, `usage.rs`, `resolve.rs`).
-5. Importing files into a mod folder (copy from native paths) and listing a mod's files for the rule picker.
+5. ~~Importing files into a mod folder (copy from native paths) and listing a mod's files for the rule picker.~~ Done (`import.rs`, `browse.rs`).
 6. `plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt (including a rename since the last deploy).
 7. Config: load, save, validate, platform config dir.
 8. `Manager` facade struct over the above so each Tauri command is a one-liner.
@@ -129,4 +132,4 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 5. Deploy bar: deploy, clean, launch, deployed-state indicator, conflict warnings.
 
 ### Phase D
-Export/import of the whole setup as one zip (staging + profiles), zip mod import, progress events for large copies, polish.
+Export/import of the whole setup as one zip (staging + profiles), zip mod import, wiring `import_into_mod`'s progress callback to UI events, polish.
