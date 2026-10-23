@@ -28,6 +28,8 @@ crates/samml-core/   all logic; no printing, no argument parsing
   profile_mods.rs    edit which mods a profile uses, in memory (add/remove/move/toggle)
   usage.rs           library + profiles together: who uses a mod; delete everywhere
   resolve.rs         a profile's entries joined with the library: describe (names, problems) and resolve for deploy
+  links.rs           which symlinks a mod needs (rule resolution); shared by plan and deploy
+  plan.rs            what deploying a profile would do: links, conflicts, problems, deployed state (read-only)
   deploy.rs          teardown / link / deploy (all-or-nothing) / clean
   launch.rs          launching the game through Steam
   -- helpers
@@ -70,7 +72,7 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 - **Mods are independent of profiles.** Profiles only choose from the library. Editing a mod (rename, rules, delete) is done once, in the library.
 - **Profiles refer to mods by id**, so renaming a mod changes only the library entry and its folder: one folder rename plus one atomic file write (rolled back if the write fails). No profile is rewritten and no profile can be left half-updated.
 - **Name = folder = in-game name.** A mod's name is its staging folder and its `modloader/<name>` folder. Names must be valid folder names; invalid names are rejected with the reason (never silently cleaned) and are unique ignoring case.
-- **Renaming a mod renames its folder** (staging now, game on the next deploy). Resetting that mod's modloader settings is acceptable. If a profile is deployed when a mod is renamed, the old folder remains until redeploy, so the UI should tell the player to redeploy (the deploy plan should detect this).
+- **Renaming a mod renames its folder** (staging now, game on the next deploy). Resetting that mod's modloader settings is acceptable. If a profile is deployed when a mod is renamed, the old folder remains until redeploy, so the UI should tell the player to redeploy (the deploy plan detects this as `OutOfDate`).
 - **Folders changed outside the app**: a folder renamed by hand becomes a new mod with a new id; the old entry shows as a problem (folder missing) and profiles using it show the mod as missing. A later "relink" action could reconnect them.
 - **Removing a mod from a profile** leaves the files in the library.
 - **Deleting a mod from the library** is separate and confirmed. The UI lists the profiles using it (`usage::profiles_using_mod`); deleting removes it from all of them (`usage::delete_mod_everywhere`).
@@ -79,6 +81,16 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 - **Rules**: an empty `files` list means the same as no list (deploy to `modloader`). A target of `./` means "inside the game folder".
 - **Importing** copies from native paths on the Rust side (Tauri dialog and drag-and-drop give paths), so file bytes never pass through the webview. `import_into_mod` takes a `Placement`: `Items` puts each chosen file/folder inside the mod under its own name; `Contents` merges one chosen folder's contents into the mod root (so a downloaded mod folder becomes the mod). `preview_import` reports file count, size and which existing files would be replaced, without changing anything; with `ConflictPolicy::Fail` any conflict aborts the import, `Overwrite` replaces them. Symlinks in the source are refused, and a source can't be, contain, or sit inside the mod's own folder. If a copy fails, everything the import created is removed (replaced files stay replaced). A progress callback runs after each file.
 - **Browsing** a mod (`browse::list_mod_files`) lists one folder level at a time, folders first, and refuses `..`, absolute paths and symlinks leading outside the mod.
+- **Deploy plan** (`plan::plan_deploy`) is read-only and is what the UI shows before deploying.
+It lists every profile entry's links (paths relative to the game and staging directories), including inactive mods so the "deploys to" column can show them.
+Inactive mods take no part in conflicts, ordering checks or the deployed state.
+Links come from `links::mod_links`, the same function `deploy` uses, so what is shown is what gets deployed.
+A mod that cannot be planned (missing folder, bad rule, missing source, `modloader/` not created earlier) gets a `problem` and no links, and `can_deploy` is false while any active mod has one.
+Conflicts (two active links to the same game path, last mod wins) are warnings and do not block.
+Placing files inside another mod's whole-folder link (e.g. `modloader/Ragdoll/...` inside the `modloader` link) is intended and is not a conflict.
+`replaces_game_file` marks links that will back up and replace a file that is not ours.
+- **Deployed state** compares the receipt and the links on disk with the plan: `NotDeployed`, `OtherProfile`, `UpToDate`, or `OutOfDate` with the `missing` (to add), `stale` (to remove) and `changed` (wrong target) paths.
+Renaming a mod, adding or removing mods, changing rules or toggling a mod all show up as `OutOfDate`, which is how the UI knows to prompt for a redeploy.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.
 
 ## Requirements
@@ -106,7 +118,6 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 
 ## Known issues / risks
 
-- Two mods targeting the same path: the last one silently wins. The deploy plan should report conflicts.
 - Windows-origin mods can assume case-insensitive paths; Linux is case-sensitive.
 
 ## Plan
@@ -117,7 +128,7 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 3. ~~Name and path validation; editing a profile's mods.~~ Done (`paths.rs`, `rules.rs`, `profile_mods.rs`).
 4. ~~Mod library: mods independent of profiles, stable ids, library file, delete everywhere.~~ Done (`library.rs`, `usage.rs`, `resolve.rs`).
 5. ~~Importing files into a mod folder (copy from native paths) and listing a mod's files for the rule picker.~~ Done (`import.rs`, `browse.rs`).
-6. `plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt (including a rename since the last deploy).
+6. ~~`plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt (including a rename since the last deploy).~~ Done (`plan.rs`, `links.rs`).
 7. Config: load, save, validate, platform config dir.
 8. `Manager` facade struct over the above so each Tauri command is a one-liner.
 
