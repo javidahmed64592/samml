@@ -1,12 +1,15 @@
 # SAMML - San Andreas Mod Manager Linux
 
-A Linux-only mod manager for GTA: San Andreas (v1.0, Steam). Rust throughout: `samml-core` (logic), `samml-cli`, and a planned Tauri + Leptos GUI. Mods are symlinked from a staging directory into the game directory; nothing is copied at deploy time.
+A Linux-only mod manager for GTA: San Andreas (v1.0, Steam). Rust throughout: `samml-core` (logic), `samml-cli`, and a planned Tauri + Leptos GUI.
+Mods are symlinked from a staging directory into the game directory; nothing is copied at deploy time.
 
-Linux is the only supported platform. Unix-only APIs (e.g. symlinks) are fine.
+Linux is the only supported platform.
+Unix-only APIs (e.g. symlinks) are fine.
 
 ## Product goal
 
-The UI manages everything. Players never open mod folders, `app_manifest.json` or profile files themselves.
+The UI manages everything.
+Players never open mod folders, `app_manifest.json` or profile files themselves.
 
 ## Workspace layout
 

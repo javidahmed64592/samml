@@ -7,7 +7,7 @@
 <!-- omit from toc -->
 # San Andreas Mod Manager Linux (SAMML)
 
-A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust. Linux is the only supported platform.
+A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust.
 
 ## File Path Variables
 
@@ -20,7 +20,7 @@ In this guide, we will use the following variables for file paths:
 ## App Manifest
 
 The app manifest is a JSON file named `app_manifest.json` that defines the game directory, staging directory, and the profiles directory.
-Copy `app_manifest.example.json` to `app_manifest.json` and edit the paths; your copy is gitignored.
+Copy `app_manifest.example.json` to `app_manifest.json` and edit the paths.
 
 ```json
 {
@@ -44,15 +44,18 @@ ${STAGING_DIR}/
 └── Widescreen Fix/
 ```
 
-The folder name is the mod's name. It is also the folder the mod appears under in `modloader/` (and so the name modloader shows in game), so it must be a valid folder name: not empty, no leading or trailing spaces, no `/` or `\`, no control characters, and not starting with a `.`. Names are unique ignoring case.
+The folder name is the mod's name.
+It is also the folder the mod appears under in `modloader/` (and so the name modloader shows in game), so it must be a valid folder name: not empty, no leading or trailing spaces, no `/` or `\`, no control characters, and not starting with a `.`.
+Names are unique ignoring case.
 Folders starting with a `.` are ignored.
 
 You can drop a new folder into `${STAGING_DIR}` at any time and it becomes available to every profile.
-Renaming a mod renames its folder. Profiles refer to mods by a stable id (below), so no profile needs updating, but the in-game folder changes too, so redeploy afterwards.
+Renaming a mod renames its folder.
+Profiles refer to mods by a stable ID (below), so no profile needs updating, but the in-game folder changes too, so redeploy afterwards.
 
 ### Library file
 
-`${STAGING_DIR}/.samml_library.json` lists the mods, keyed by a stable **id**, with each mod's name and, if it needs them, its deploy rules:
+`${STAGING_DIR}/.samml_library.json` lists the mods, keyed by a stable **ID**, with each mod's name and, if it needs them, its deploy rules:
 
 ```json
 {
@@ -80,8 +83,8 @@ Renaming a mod renames its folder. Profiles refer to mods by a stable id (below)
   - `target`: a path inside `${GAME_DIR}`.
   - Paths must be relative and cannot contain `..`. Anything not listed is ignored when `files` is given.
 
-The id is made from the mod's name when it is first added (a slug plus four random characters) and never changes, even if the mod is renamed.
-You do not need to write ids yourself: a folder dropped into `${STAGING_DIR}` is given one the next time the library is listed.
+The ID is made from the mod's name when it is first added (a slug plus four random characters) and never changes, even if the mod is renamed.
+You do not need to write IDs yourself: a folder dropped into `${STAGING_DIR}` is given one the next time the library is listed.
 
 Because the mods and their rules are all inside `${STAGING_DIR}`, zipping that folder backs up your whole library.
 
@@ -138,7 +141,8 @@ It does not contain any deployment paths; those belong to the mods, so any numbe
 - `name`: The profile's display name.
 - `mods`: The mods to deploy, in order. Each has the `id` of a mod in the library and an `active` flag; set `active` to false to leave it out without losing its place.
 
-Mods are deployed in the order listed. **CLEO and Modloader must come first**, because other mods are placed inside the `modloader/` folder that Modloader creates and many need CLEO.
+Mods are deployed in the order listed.
+**CLEO and Modloader must come first**, because other mods are placed inside the `modloader/` folder that Modloader creates and many need CLEO.
 If a profile lists a mod that is not in the library, or whose folder is missing from `${STAGING_DIR}`, deploying fails and names the problem mods.
 
 A mod without `files` is linked whole to `modloader/<name>`:
