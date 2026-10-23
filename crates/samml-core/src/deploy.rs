@@ -2,12 +2,12 @@
 //!
 //! Owns linking, stock-file backups and teardown. Reads and writes the
 //! receipt through `receipt`. The mods to deploy come from `resolve`, which
-//! has already picked the active ones and joined them with their rules.
+//! has already picked the active ones and joined them with their rules, and
+//! which links each mod needs comes from `links`.
 
+use crate::links::{self, MODLOADER_DIR};
 use crate::manifest::{AppManifest, DeployMod};
-use crate::paths;
 use crate::receipt::{self, Receipt};
-use crate::rules::validate_rules;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::ErrorKind;
@@ -167,83 +167,21 @@ fn link(target: &Path, link_path: &Path, receipt: &mut Receipt, game_dir: &Path)
         .with_context(|| format!("linking {} -> {}", link_path.display(), target.display()))
 }
 
-/// Resolve one FileRule into concrete (link_path, target_real_path) pairs,
-/// applying the rsync-style trailing-slash convention.
-fn resolve_rule(
-    mod_root: &Path,
-    game_dir: &Path,
-    source: &str,
-    target: &str,
-) -> Result<Vec<(PathBuf, PathBuf)>> {
-    let merge_contents = source.ends_with('/');
-    let place_inside = target.ends_with('/');
-
-    let source_path = paths::join_normalized(mod_root, source);
-    let target_path = paths::join_normalized(game_dir, target);
-
-    let mut out = Vec::new();
-
-    if merge_contents {
-        for entry in fs::read_dir(&source_path)
-            .with_context(|| format!("reading {}", source_path.display()))?
-        {
-            let entry = entry?;
-            let link_path = target_path.join(entry.file_name());
-            out.push((link_path, entry.path()));
-        }
-    } else if place_inside {
-        let name = source_path
-            .file_name()
-            .context("source path has no file name")?;
-        out.push((target_path.join(name), source_path));
-    } else {
-        out.push((target_path, source_path));
-    }
-
-    Ok(out)
-}
-
-/// Deploy a single mod: either its explicit `files` rules, or (when `files`
-/// is omitted entirely) the whole mod folder as a unit to modloader/<name>.
-///
-/// The name and rules are validated first: a hand-edited profile or library
-/// gets the same checks as one edited through the app.
+/// Deploy a single mod: link everything `links::mod_links` says it needs.
+/// A mod without file rules goes into `modloader/`, which must already
+/// exist by then (an earlier mod creates it).
 fn deploy_mod(
     m: &DeployMod,
     staging_dir: &Path,
     game_dir: &Path,
     receipt: &mut Receipt,
 ) -> Result<()> {
-    paths::validate_component(&m.name)
-        .with_context(|| format!("'{}' cannot be used as a mod name", m.name))?;
-    let mod_root = staging_dir.join(&m.name);
-    if !mod_root.is_dir() {
-        bail!("{} has no folder at {}", m.name, mod_root.display());
+    let to_link = links::mod_links(m, staging_dir, game_dir)?;
+    if m.files.is_none() && !game_dir.join(MODLOADER_DIR).exists() {
+        bail!("{}", links::modloader_missing_message(&m.name));
     }
-
-    match &m.files {
-        Some(rules) => {
-            validate_rules(rules).with_context(|| format!("{}: invalid file rules", m.name))?;
-            for rule in rules {
-                for (link_path, target_path) in
-                    resolve_rule(&mod_root, game_dir, &rule.source, &rule.target)?
-                {
-                    link(&target_path, &link_path, receipt, game_dir)?;
-                }
-            }
-        }
-        None => {
-            let modloader_dir = game_dir.join("modloader");
-            if !modloader_dir.exists() {
-                bail!(
-                    "{}: modloader/ does not exist yet - deploy the mod that \
-                     creates it (e.g. a 'modloader' mod) earlier in the profile",
-                    m.name
-                );
-            }
-            let link_path = modloader_dir.join(&m.name);
-            link(&mod_root, &link_path, receipt, game_dir)?;
-        }
+    for (link_path, target) in to_link {
+        link(&target, &link_path, receipt, game_dir)?;
     }
     Ok(())
 }
@@ -370,24 +308,6 @@ mod tests {
 
     fn modloader() -> DeployMod {
         mod_with_rules("Modloader", vec![rule("modloader", "modloader")])
-    }
-
-    #[test]
-    fn resolves_rsync_style_rules() {
-        let env = Env::new();
-        env.stage("m/dir/a.txt", "a");
-        let root = env.app.staging_dir.join("m");
-        let game = &env.app.game_dir;
-
-        // trailing slash on source: contents merged into target
-        let r = resolve_rule(&root, game, "dir/", "merged/").unwrap();
-        assert_eq!(r, vec![(game.join("merged/a.txt"), root.join("dir/a.txt"))]);
-        // no slashes: item placed at the exact path (rename)
-        let r = resolve_rule(&root, game, "dir", "renamed").unwrap();
-        assert_eq!(r, vec![(game.join("renamed"), root.join("dir"))]);
-        // trailing slash on target: item placed inside, keeping its name
-        let r = resolve_rule(&root, game, "dir", "container/").unwrap();
-        assert_eq!(r, vec![(game.join("container/dir"), root.join("dir"))]);
     }
 
     #[test]

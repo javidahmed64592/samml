@@ -97,10 +97,11 @@ The trailing slash convention mirrors `rsync`:
 - `target` has no trailing slash => the item is placed at that EXACT path (i.e. may rename it).
 - `target` of `./` => place the item directly in `${GAME_DIR}`.
 
-For example, a mod called "Mod 2" with these rules:
+For example, a mod called "Mod 2" with these rules (an entry in the `mods` object of the library file):
 
 ```json
-"Mod 2": {
+"mod_2-1a2b": {
+  "name": "Mod 2",
   "files": [
     { "source": "data/", "target": "data/" },
     { "source": "cleo/new-script.cs", "target": "cleo/new-script.cs" },

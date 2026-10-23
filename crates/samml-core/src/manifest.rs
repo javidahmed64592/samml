@@ -95,6 +95,82 @@ pub struct DeployMod {
     pub files: Option<Vec<FileRule>>,
 }
 
+// The deploy plan: what deploying a profile would do, shown before it does it.
+
+/// One symlink a mod needs, as paths relative to the game and staging
+/// directories.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedLink {
+    /// Where the link goes, relative to GAME_DIR.
+    pub path: String,
+    /// What it points at, relative to STAGING_DIR.
+    pub source: String,
+    /// True if a file or folder that is not ours is already at `path` (e.g.
+    /// a stock game file). It is backed up first and restored by `clean`.
+    pub replaces_game_file: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlannedMod {
+    pub id: String,
+    /// `None` if the id is not in the library at all.
+    pub name: Option<String>,
+    pub active: bool,
+    /// Empty if the mod has a problem.
+    pub links: Vec<PlannedLink>,
+    /// Why the mod cannot be deployed, or `None` if it is fine.
+    pub problem: Option<String>,
+}
+
+/// A game path that more than one active link would write to. The last
+/// mod in deploy order wins.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanConflict {
+    pub path: String,
+    /// Names of the mods, in deploy order.
+    pub mods: Vec<String>,
+}
+
+/// How what is in the game directory differs from the plan (paths relative
+/// to GAME_DIR).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeployDrift {
+    /// Planned links that are not deployed yet.
+    pub missing: Vec<String>,
+    /// Deployed links the plan no longer includes (e.g. a renamed mod's
+    /// old folder).
+    pub stale: Vec<String>,
+    /// Links that are deployed but missing or pointing somewhere else.
+    pub changed: Vec<String>,
+}
+
+/// Whether the game directory matches the profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DeployState {
+    NotDeployed,
+    /// Another profile is deployed (`None` if the receipt does not say
+    /// which).
+    OtherProfile {
+        slug: Option<String>,
+    },
+    UpToDate,
+    /// This profile is deployed, but changes since then (mods added,
+    /// renamed, re-ruled, ...) mean it should be redeployed.
+    OutOfDate(DeployDrift),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeployPlan {
+    /// Every profile entry in profile order. Inactive mods are included so
+    /// the UI can show where they would go, but they take no part in
+    /// conflicts or the deployed state.
+    pub mods: Vec<PlannedMod>,
+    pub conflicts: Vec<PlanConflict>,
+    pub state: DeployState,
+    /// True if no active mod has a problem. Conflicts do not block.
+    pub can_deploy: bool,
+}
+
 // Importing files into a mod, and browsing what is in one.
 
 /// Where imported sources end up inside the mod's folder.

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, bail};
-use samml_core::{config, deploy, launch, library, manifest, profiles, resolve};
+use samml_core::manifest::DeployState;
+use samml_core::{config, deploy, launch, library, manifest, plan, profiles, resolve};
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
@@ -60,7 +61,7 @@ fn main() -> Result<()> {
             }
 
             match command.as_str() {
-                "show" => {}
+                "show" => print_plan(&app, slug, &profile)?,
                 "deploy" => deploy(&app, slug, &profile)?,
                 "launch" => launch(&app)?,
                 "run" => {
@@ -123,5 +124,48 @@ fn launch(app: &manifest::AppManifest) -> Result<()> {
         "Launched Steam App ID {}.",
         app.steam_app_id.unwrap_or_default()
     );
+    Ok(())
+}
+
+fn print_plan(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+    let plan = plan::plan_deploy(app, slug, profile)?;
+    let links: usize = plan
+        .mods
+        .iter()
+        .filter(|m| m.active)
+        .map(|m| m.links.len())
+        .sum();
+    println!(
+        "\nWould create {links} link(s). Game directory: {}",
+        match &plan.state {
+            DeployState::NotDeployed => "nothing deployed".to_string(),
+            DeployState::OtherProfile { slug } => format!(
+                "another profile is deployed ({})",
+                slug.as_deref().unwrap_or("unknown")
+            ),
+            DeployState::UpToDate => "up to date".to_string(),
+            DeployState::OutOfDate(d) => format!(
+                "OUT OF DATE ({} to add, {} to remove, {} changed) - redeploy",
+                d.missing.len(),
+                d.stale.len(),
+                d.changed.len()
+            ),
+        }
+    );
+    for c in &plan.conflicts {
+        println!("  CONFLICT {} <- {}", c.path, c.mods.join(", "));
+    }
+    let replaced = plan
+        .mods
+        .iter()
+        .flat_map(|m| &m.links)
+        .filter(|l| l.replaces_game_file)
+        .count();
+    if replaced > 0 {
+        println!("  {replaced} existing game file(s) will be backed up and replaced");
+    }
+    if !plan.can_deploy {
+        println!("  Cannot deploy until the problems above are fixed.");
+    }
     Ok(())
 }

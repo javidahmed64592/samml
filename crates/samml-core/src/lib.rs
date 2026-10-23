@@ -14,6 +14,8 @@
 //! - `profile_mods`: editing which mods a profile uses (in memory)
 //! - `usage`: renaming or deleting a mod across the library and all profiles
 //! - `resolve`: a profile's active mods joined with their deploy rules
+//! - `links`: which symlinks a mod needs (shared by `plan` and `deploy`)
+//! - `plan`: what deploying a profile would do, and whether the game matches
 //! - `deploy`: symlink mods into the game directory and undo it
 //! - `launch`: start the game through Steam
 //!
@@ -28,8 +30,10 @@ pub mod deploy;
 pub mod import;
 pub mod launch;
 pub mod library;
+pub mod links;
 pub mod manifest;
 pub mod paths;
+pub mod plan;
 pub mod profile_mods;
 pub mod profiles;
 pub mod receipt;
