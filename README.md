@@ -7,100 +7,61 @@
 <!-- omit from toc -->
 # San Andreas Mod Manager Linux (SAMML)
 
-A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust. Linux is the only supported platform.
+A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built in Rust.
 
 ## File Path Variables
 
 In this guide, we will use the following variables for file paths:
 
 - `${GAME_DIR}`: The root directory of the Grand Theft Auto: San Andreas game installation. This directory should contain the game executable.
-- `${STAGING_DIR}`: Add your mods as separate directories within this staging area before deploying them to the game directory.
+- `${STAGING_DIR}`: Your mod library. Every folder directly inside it is a mod.
 - `${PROFILES_DIR}`: The directory where mod profiles for the mod manager are stored.
 
 ## App Manifest
 
 The app manifest is a JSON file named `app_manifest.json` that defines the game directory, staging directory, and the profiles directory.
-Copy `app_manifest.example.json` to `app_manifest.json` and edit the paths; your copy is gitignored.
+Copy `app_manifest.example.json` to `app_manifest.json` and edit the paths.
 
 ```json
 {
   "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/",
   "staging_dir": "/path/to/samml/staging/",
   "profiles_dir": "/path/to/samml/profiles/",
-  "steam_app_id": 12120,
+  "steam_app_id": 12120
 }
 ```
 
-## Profiles
+## Mods
 
-A profile is a JSON file that defines the mods to be deployed for a specific mod setup.
-Each profile is stored in the `${PROFILES_DIR}` directory and contains an array of mod manifests.
-
-The manifests are JSON objects that define the deployment paths for your mods within the game directory.
-
-- `name`: The name of the mod. Mods without `files` are deployed to `modloader/<name>`, so this is the name modloader shows in game. It must be a valid folder name: not empty, no leading or trailing spaces, no `/` or `\`, no control characters, and not starting with a `.`. Names must be unique within a profile, ignoring case.
-- `mod_path`: The relative path to the mod within the staging directory.
-- `active`: A boolean indicating whether the mod is active. Set to false to not deploy the mod.
-- `files`: An array of objects specifying the source and target paths for files within the mod.
-
-The mods will get deployed to the `modloader` directory by default if the `files` array is omitted.
-However, some mods require files to be deployed to specific locations within the game directory so this can be specified in the manifest files using the `files` array.
-
-### Trailing Slash Convention
-
-The trailing slash convention mirrors `rsync`:
-- `source` ends with '/'  => deploy the CONTENTS of that directory, merging them into `target` (the directory itself is not recreated).
-- `source` has no trailing slash => deploy the item itself (file or whole directory) as a unit.
-- `target` ends with '/'  => place the item INSIDE that directory, keeping the source's own name.
-- `target` has no trailing slash => the item is placed at that EXACT path (i.e. may rename it).
-
-### Deploying CLEO + Modloader
-
-The below examples show how to deploy `CLEO 5.4.0` and `modloader` (use your preferred CLEO version).
-The manifest entries for these **must come first** in the `app_manifest.json` file to ensure that the necessary directories are created before deploying other mods.
-First, add these two mods to the staging directory so you have the following structure:
+Mods live in `${STAGING_DIR}`, one folder per mod, with no nesting:
 
 ```
 ${STAGING_DIR}/
-└── system/
-    ├── cleo-5.4.0/
-    │   ├── cleo/
-    │   ├── CLEO.asi
-    │   ├── bass.dll
-    │   ├── vorbisFile.dll
-    │   └── vorbisHooked.dll
-    └── modloader/
-        ├── modloader/
-        │   ├── .data/
-        │   └── .profiles/
-        └── modloader.asi
+├── .samml_library.json
+├── CLEO 5.4.0/
+├── Modloader/
+├── Ragdoll/
+└── Widescreen Fix/
 ```
 
-These need to get deployed to the game directory with the following structure:
+The folder name is the mod's name.
+It is also the folder the mod appears under in `modloader/` (and so the name modloader shows in game), so it must be a valid folder name: not empty, no leading or trailing spaces, no `/` or `\`, no control characters, and not starting with a `.`.
+Names are unique ignoring case.
+Folders starting with a `.` are ignored.
 
-```
-${GAME_DIR}/
-├── cleo/
-├── modloader/
-│   ├── .data/
-│   └── .profiles/
-├── CLEO.asi
-├── bass.dll
-├── modloader.asi
-├── vorbisFile.dll
-└── vorbisHooked.dll
-```
+You can drop a new folder into `${STAGING_DIR}` at any time and it becomes available to every profile.
+Renaming a mod renames its folder.
+Profiles refer to mods by a stable ID (below), so no profile needs updating, but the in-game folder changes too, so redeploy afterwards.
 
-This can be achieved by creating the following profile (e.g. `${PROFILES_DIR}/profile.json`).
+### Library file
+
+`${STAGING_DIR}/.samml_library.json` lists the mods, keyed by a stable **ID**, with each mod's name and, if it needs them, its deploy rules:
 
 ```json
 {
-  "name": "Default",
-  "manifests": [
-    {
+  "mods": {
+    "cleo_5_4_0-7287": {
       "name": "CLEO 5.4.0",
-      "mod_path": "system/cleo-5.4.0",
-      "active": true,
       "files": [
         { "source": "cleo", "target": "cleo" },
         { "source": "CLEO.asi", "target": "CLEO.asi" },
@@ -109,104 +70,88 @@ This can be achieved by creating the following profile (e.g. `${PROFILES_DIR}/pr
         { "source": "vorbisHooked.dll", "target": "vorbisHooked.dll" }
       ]
     },
-    {
-      "name": "Modloader",
-      "mod_path": "system/modloader",
-      "active": true,
-      "files": [
-        { "source": "modloader", "target": "modloader" },
-        { "source": "modloader.asi", "target": "modloader.asi" }
-      ]
+    "widescreen_fix-9906": {
+      "name": "Widescreen Fix"
     }
+  }
+}
+```
+
+- `name`: The mod's folder in `${STAGING_DIR}`. See above for what makes a valid name.
+- `files`: Where the mod's files go. Omit it (or leave it empty) to deploy the whole mod to `${GAME_DIR}/modloader/<name>`.
+  - `source`: a path inside the mod's folder.
+  - `target`: a path inside `${GAME_DIR}`.
+  - Paths must be relative and cannot contain `..`. Anything not listed is ignored when `files` is given.
+
+The ID is made from the mod's name when it is first added (a slug plus four random characters) and never changes, even if the mod is renamed.
+You do not need to write IDs yourself: a folder dropped into `${STAGING_DIR}` is given one the next time the library is listed.
+
+Because the mods and their rules are all inside `${STAGING_DIR}`, zipping that folder backs up your whole library.
+
+#### Trailing Slash Convention
+
+The trailing slash convention mirrors `rsync`:
+- `source` ends with '/'  => deploy the CONTENTS of that directory, merging them into `target` (the directory itself is not recreated).
+- `source` has no trailing slash => deploy the item itself (file or whole directory) as a unit.
+- `target` ends with '/'  => place the item INSIDE that directory, keeping the source's own name.
+- `target` has no trailing slash => the item is placed at that EXACT path (i.e. may rename it).
+- `target` of `./` => place the item directly in `${GAME_DIR}`.
+
+For example, a mod called "Mod 2" with these rules:
+
+```json
+"Mod 2": {
+  "files": [
+    { "source": "data/", "target": "data/" },
+    { "source": "cleo/new-script.cs", "target": "cleo/new-script.cs" },
+    { "source": "new-mod.asi", "target": "new-mod.asi" }
   ]
 }
 ```
 
-### Adding New Mods
+is deployed like this:
 
-#### Deploying directly to modloader/
+```
+${STAGING_DIR}/Mod 2/          ${GAME_DIR}/
+├── cleo/                      ├── cleo/
+│   └── new-script.cs          │   └── new-script.cs
+├── data/                      ├── data/
+│   └── file.dat               │   ├── ...
+└── new-mod.asi                │   └── file.dat
+                               └── new-mod.asi
+```
 
-Adding new mods is similar to adding mods to the `modloader` directory.
-For example, if you have a mod named "Mod 1" stored in `${STAGING_DIR}/mods/mod-1` and you would like this to be deployed to `${GAME_DIR}/modloader/mod-1`, include the following manifest entry in your profile:
+## Profiles
+
+A profile is a JSON file in `${PROFILES_DIR}` that picks mods from the library and puts them in deploy order.
+It does not contain any deployment paths; those belong to the mods, so any number of profiles can share a mod.
 
 ```json
 {
-  "manifests": [
-    {
-      "name": "Mod 1",
-      "mod_path": "mods/mod-1",
-      "active": true
-    }
+  "name": "Default",
+  "mods": [
+    { "id": "cleo_5_4_0-7287", "active": true },
+    { "id": "modloader-bf47", "active": true },
+    { "id": "widescreen_fix-9906", "active": true },
+    { "id": "ragdoll-ddc0", "active": false }
   ]
 }
 ```
 
-The resulting directory structure will look like this:
+- `name`: The profile's display name.
+- `mods`: The mods to deploy, in order. Each has the `id` of a mod in the library and an `active` flag; set `active` to false to leave it out without losing its place.
+
+Mods are deployed in the order listed.
+**CLEO and Modloader must come first**, because other mods are placed inside the `modloader/` folder that Modloader creates and many need CLEO.
+If a profile lists a mod that is not in the library, or whose folder is missing from `${STAGING_DIR}`, deploying fails and names the problem mods.
+
+A mod without `files` is linked whole to `modloader/<name>`:
 
 ```
-${STAGING_DIR}/
-└── mods/
-    └── mod-1/
-        ├── new-mod-files/
-        └── new-mod.asi
+${STAGING_DIR}/Widescreen Fix/       ${GAME_DIR}/modloader/Widescreen Fix/
+├── new-mod-files/                   ├── new-mod-files/
+└── new-mod.asi                      └── new-mod.asi
 ```
-
-```
-${GAME_DIR}/
-└── modloader/
-    └── mod-1/
-        ├── new-mod-files/
-        └── new-mod.asi
-```
-
-#### Deploying to specific game directories
-
-However, not all mods can be deployed directly to the `modloader` directory.
-Some mods require files to be placed in specific locations within the game directory.
-In such cases, you need to specify the `files` array in the manifest to define the source and target paths for each file.
-
-```json
-{
-  "manifests": [
-    {
-      "name": "Mod 2",
-      "mod_path": "mods/mod-2",
-      "active": true,
-      "files": [
-        { "source": "data/", "target": "data/" },
-        { "source": "cleo/new-script.cs", "target": "cleo/new-script.cs" },
-        { "source": "new-mod.asi", "target": "new-mod.asi" }
-      ]
-    }
-  ]
-}
-```
-
-The resulting directory structure for this mod will look like this:
-
-```
-${STAGING_DIR}/
-└── mods/
-    └── mod-2/
-        ├── cleo/
-        │   └── new-script.cs
-        ├── data/
-        │   └── file.dat
-        └── new-mod.asi
-```
-
-```
-${GAME_DIR}/
-├── cleo/
-│   └── new-script.cs
-├── data/
-│   ├── ...
-│   └── file.dat
-└── new-mod.asi
-```
-
-Any file/folder not included in the `files` array will be ignored if the `files` array is specified.
-If an empty array is specified, no files from that mod will be deployed to the game directory.
 
 ## License
 

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use samml_core::{config, deploy, launch, manifest, profiles};
+use samml_core::{config, deploy, launch, library, manifest, profiles, resolve};
 use std::path::PathBuf;
 
 fn main() -> Result<()> {
@@ -7,12 +7,12 @@ fn main() -> Result<()> {
 
     // samml [app_manifest.json] clean
     // samml [app_manifest.json] list
-    // samml [app_manifest.json] <deploy|launch|run> <profile_slug>
+    // samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>
     let (manifest_path, command, profile_slug) = match args.len() {
-        2 if args[1] == "clean" || args[1] == "list" => {
+        2 if matches!(args[1].as_str(), "clean" | "list" | "mods") => {
             (PathBuf::from("app_manifest.json"), args[1].clone(), None)
         }
-        3 if args[2] == "clean" || args[2] == "list" => {
+        3 if matches!(args[2].as_str(), "clean" | "list" | "mods") => {
             (PathBuf::from(&args[1]), args[2].clone(), None)
         }
         3 => (
@@ -26,14 +26,14 @@ fn main() -> Result<()> {
             Some(args[3].clone()),
         ),
         _ => bail!(
-            "usage: samml [app_manifest.json] <deploy|launch|run> <profile_slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] clean"
+            "usage: samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] mods\n       samml [app_manifest.json] clean"
         ),
     };
 
     let app = config::load_app_manifest(&manifest_path)?;
 
     match command.as_str() {
-        "deploy" | "launch" | "run" => {
+        "show" | "deploy" | "launch" | "run" => {
             let slug = profile_slug.as_deref().unwrap();
             let profile =
                 profiles::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
@@ -46,22 +46,25 @@ fn main() -> Result<()> {
             println!(
                 "Profile '{}' ({slug}) - {} mod(s):",
                 profile.name,
-                profile.manifests.len()
+                profile.mods.len()
             );
-            for m in &profile.manifests {
+            for m in resolve::describe_profile(&app.staging_dir, &profile)? {
                 println!(
-                    "  [{}] {} ({})",
+                    "  [{}] {}{}",
                     if m.active { "x" } else { " " },
-                    m.name,
-                    m.mod_path
+                    m.name.as_deref().unwrap_or(&m.id),
+                    m.problem
+                        .map(|p| format!("  (PROBLEM: {p})"))
+                        .unwrap_or_default()
                 );
             }
 
             match command.as_str() {
-                "deploy" => deploy(&app, slug, &profile.manifests)?,
+                "show" => {}
+                "deploy" => deploy(&app, slug, &profile)?,
                 "launch" => launch(&app)?,
                 "run" => {
-                    deploy(&app, slug, &profile.manifests)?;
+                    deploy(&app, slug, &profile)?;
                     launch(&app)?;
                 }
                 _ => unreachable!(),
@@ -83,6 +86,20 @@ fn main() -> Result<()> {
                 println!("{} - {}", p.slug, p.name);
             }
         }
+        "mods" => {
+            let mods = library::list_mods(&app.staging_dir)?;
+            if mods.is_empty() {
+                println!("No mods found in {}", app.staging_dir.display());
+            }
+            for m in mods {
+                let note = match (&m.problem, &m.files) {
+                    (Some(problem), _) => format!("  (PROBLEM: {problem})"),
+                    (None, Some(files)) => format!("  ({} file rule(s))", files.len()),
+                    (None, None) => String::new(),
+                };
+                println!("{}  [{}]{note}", m.name, m.id);
+            }
+        }
         "clean" => {
             deploy::clean(&app)?;
             println!("Restored to vanilla.");
@@ -93,8 +110,9 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppManifest, slug: &str, mods: &[manifest::ModManifest]) -> Result<()> {
-    deploy::deploy(app, slug, mods)?;
+fn deploy(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+    let mods = resolve::resolve_profile(&app.staging_dir, profile)?;
+    deploy::deploy(app, slug, &mods)?;
     println!("Deployed.");
     Ok(())
 }

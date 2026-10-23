@@ -1,12 +1,13 @@
 //! Turns a list of mods into symlinks in `GAME_DIR`, and undoes them.
 //!
 //! Owns linking, stock-file backups and teardown. Reads and writes the
-//! receipt through `receipt`; the mods and paths come from `manifest`.
+//! receipt through `receipt`. The mods to deploy come from `resolve`, which
+//! has already picked the active ones and joined them with their rules.
 
-use crate::manifest::{AppManifest, ModManifest};
-use crate::mods::validate_rules;
+use crate::manifest::{AppManifest, DeployMod};
 use crate::paths;
 use crate::receipt::{self, Receipt};
+use crate::rules::validate_rules;
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::ErrorKind;
@@ -205,17 +206,17 @@ fn resolve_rule(
 /// Deploy a single mod: either its explicit `files` rules, or (when `files`
 /// is omitted entirely) the whole mod folder as a unit to modloader/<name>.
 ///
-/// Paths are validated first: a hand-edited profile gets the same checks as
-/// one edited through the app.
+/// The name and rules are validated first: a hand-edited profile or library
+/// gets the same checks as one edited through the app.
 fn deploy_mod(
-    m: &ModManifest,
+    m: &DeployMod,
     staging_dir: &Path,
     game_dir: &Path,
     receipt: &mut Receipt,
 ) -> Result<()> {
-    paths::validate_relative(&m.mod_path)
-        .with_context(|| format!("{}: invalid mod_path '{}'", m.name, m.mod_path))?;
-    let mod_root = paths::join_normalized(staging_dir, &m.mod_path);
+    paths::validate_component(&m.name)
+        .with_context(|| format!("'{}' cannot be used as a mod name", m.name))?;
+    let mod_root = staging_dir.join(&m.name);
     if !mod_root.is_dir() {
         bail!("{} has no folder at {}", m.name, mod_root.display());
     }
@@ -235,13 +236,11 @@ fn deploy_mod(
             let modloader_dir = game_dir.join("modloader");
             if !modloader_dir.exists() {
                 bail!(
-                    "{}: modloader/ does not exist yet - deploy the manifest entry that \
+                    "{}: modloader/ does not exist yet - deploy the mod that \
                      creates it (e.g. a 'modloader' mod) earlier in the profile",
                     m.name
                 );
             }
-            paths::validate_component(&m.name)
-                .with_context(|| format!("'{}' cannot be used as a folder name", m.name))?;
             let link_path = modloader_dir.join(&m.name);
             link(&mod_root, &link_path, receipt, game_dir)?;
         }
@@ -249,27 +248,23 @@ fn deploy_mod(
     Ok(())
 }
 
-/// Link every active mod into `game_dir`, recording each change in `receipt`
+/// Link every mod into `game_dir`, recording each change in `receipt`
 /// as it happens so a failure part-way still leaves a complete record.
-fn deploy_active_mods(
-    app: &AppManifest,
-    mods: &[ModManifest],
-    receipt: &mut Receipt,
-) -> Result<()> {
-    for m in mods.iter().filter(|m| m.active) {
+fn deploy_all(app: &AppManifest, mods: &[DeployMod], receipt: &mut Receipt) -> Result<()> {
+    for m in mods {
         deploy_mod(m, &app.staging_dir, &app.game_dir, receipt)
             .with_context(|| format!("deploying mod '{}'", m.name))?;
     }
     Ok(())
 }
 
-/// Deploy every active manifest, in array order. Symlinks straight from
+/// Deploy the given mods (already the active ones, in deploy order). Symlinks straight from
 /// STAGING_DIR into GAME_DIR; nothing is copied. Any stock file a mod
 /// overwrites is backed up first and restored on the next teardown.
 ///
 /// All-or-nothing: if any mod fails, everything already done is rolled
 /// back and the game directory is left as it was found.
-pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[ModManifest]) -> Result<()> {
+pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[DeployMod]) -> Result<()> {
     let game_dir = &app.game_dir;
 
     teardown(game_dir)?;
@@ -278,7 +273,7 @@ pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[ModManifest]) -> Re
         profile: Some(profile_slug.to_string()),
         ..Receipt::default()
     };
-    let result = deploy_active_mods(app, mods, &mut receipt);
+    let result = deploy_all(app, mods, &mut receipt);
 
     // Written on failure too: rollback below is driven by this record.
     receipt::write(game_dir, &receipt)?;
@@ -337,6 +332,8 @@ mod tests {
             self.app.game_dir.join(rel)
         }
 
+        /// Creates a file in staging, e.g. `stage("Mod/a.txt", ..)` is the
+        /// file `a.txt` in the mod called `Mod`.
         fn stage(&self, rel: &str, contents: &str) {
             let path = self.app.staging_dir.join(rel);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -357,30 +354,22 @@ mod tests {
         }
     }
 
-    fn mod_with_rules(name: &str, path: &str, files: Vec<FileRule>) -> ModManifest {
-        ModManifest {
+    fn mod_with_rules(name: &str, files: Vec<FileRule>) -> DeployMod {
+        DeployMod {
             name: name.into(),
-            mod_path: path.into(),
-            active: true,
             files: Some(files),
         }
     }
 
-    fn plain_mod(name: &str, path: &str) -> ModManifest {
-        ModManifest {
+    fn plain_mod(name: &str) -> DeployMod {
+        DeployMod {
             name: name.into(),
-            mod_path: path.into(),
-            active: true,
             files: None,
         }
     }
 
-    fn modloader() -> ModManifest {
-        mod_with_rules(
-            "Modloader",
-            "modloader",
-            vec![rule("modloader", "modloader")],
-        )
+    fn modloader() -> DeployMod {
+        mod_with_rules("Modloader", vec![rule("modloader", "modloader")])
     }
 
     #[test]
@@ -404,9 +393,9 @@ mod tests {
     #[test]
     fn deploys_default_mod_into_modloader() {
         let env = Env::new();
-        env.stage("modloader/modloader/modloader.asi", "loader");
-        env.stage("mods/Cool/file.txt", "hi");
-        let mods = [modloader(), plain_mod("Cool", "mods/Cool")];
+        env.stage("Modloader/modloader/modloader.asi", "loader");
+        env.stage("Cool/file.txt", "hi");
+        let mods = [modloader(), plain_mod("Cool")];
 
         deploy(&env.app, "p", &mods).unwrap();
 
@@ -419,14 +408,24 @@ mod tests {
     }
 
     #[test]
+    fn default_deploy_uses_the_mod_name_as_the_folder() {
+        let env = Env::new();
+        env.stage("Modloader/modloader/modloader.asi", "loader");
+        env.stage("Cool Cars!/file.txt", "hi");
+
+        deploy(&env.app, "p", &[modloader(), plain_mod("Cool Cars!")]).unwrap();
+
+        assert!(env.game("modloader/Cool Cars!").is_symlink());
+    }
+
+    #[test]
     fn deploys_explicit_rules() {
         let env = Env::new();
-        env.stage("m/contents/a.txt", "a");
-        env.stage("m/whole/b.txt", "b");
-        env.stage("m/file.txt", "c");
+        env.stage("M/contents/a.txt", "a");
+        env.stage("M/whole/b.txt", "b");
+        env.stage("M/file.txt", "c");
         let mods = [mod_with_rules(
             "M",
-            "m",
             vec![
                 rule("contents/", "merged/"),
                 rule("whole", "renamed"),
@@ -448,23 +447,11 @@ mod tests {
     }
 
     #[test]
-    fn skips_inactive_mods() {
-        let env = Env::new();
-        env.stage("m/file.txt", "x");
-        let mut m = mod_with_rules("M", "m", vec![rule("file.txt", "file.txt")]);
-        m.active = false;
-
-        deploy(&env.app, "p", &[m]).unwrap();
-
-        assert!(!env.game("file.txt").exists());
-    }
-
-    #[test]
     fn default_mod_requires_modloader_first() {
         let env = Env::new();
-        env.stage("mods/Cool/file.txt", "hi");
+        env.stage("Cool/file.txt", "hi");
 
-        let err = deploy(&env.app, "p", &[plain_mod("Cool", "mods/Cool")]).unwrap_err();
+        let err = deploy(&env.app, "p", &[plain_mod("Cool")]).unwrap_err();
 
         assert!(format!("{err:#}").contains("modloader/ does not exist"));
     }
@@ -472,11 +459,11 @@ mod tests {
     #[test]
     fn errors_on_missing_mod_folder_or_source() {
         let env = Env::new();
-        let err = deploy(&env.app, "p", &[plain_mod("Ghost", "mods/Ghost")]).unwrap_err();
+        let err = deploy(&env.app, "p", &[plain_mod("Ghost")]).unwrap_err();
         assert!(format!("{err:#}").contains("has no folder"));
 
-        env.stage("m/other.txt", "x");
-        let m = mod_with_rules("M", "m", vec![rule("missing.txt", "missing.txt")]);
+        env.stage("M/other.txt", "x");
+        let m = mod_with_rules("M", vec![rule("missing.txt", "missing.txt")]);
         let err = deploy(&env.app, "p", &[m]).unwrap_err();
         assert!(format!("{err:#}").contains("source does not exist"));
     }
@@ -485,10 +472,9 @@ mod tests {
     fn backs_up_and_restores_stock_files() {
         let env = Env::new();
         env.write_game("data/stock.dat", "original");
-        env.stage("m/stock.dat", "modded");
+        env.stage("M/stock.dat", "modded");
         let mods = [mod_with_rules(
             "M",
-            "m",
             vec![rule("stock.dat", "data/stock.dat")],
         )];
 
@@ -513,11 +499,10 @@ mod tests {
     fn clean_removes_links_and_created_dirs_only() {
         let env = Env::new();
         env.write_game("data/stock.dat", "original");
-        env.stage("m/a.txt", "a");
-        env.stage("m/b.txt", "b");
+        env.stage("M/a.txt", "a");
+        env.stage("M/b.txt", "b");
         let mods = [mod_with_rules(
             "M",
-            "m",
             vec![rule("a.txt", "data/a.txt"), rule("b.txt", "new/deep/b.txt")],
         )];
 
@@ -533,14 +518,14 @@ mod tests {
             "pre-existing dirs stay"
         );
         // staging is untouched
-        assert!(env.app.staging_dir.join("m/a.txt").is_file());
+        assert!(env.app.staging_dir.join("M/a.txt").is_file());
     }
 
     #[test]
     fn clean_leaves_foreign_files_in_created_dirs() {
         let env = Env::new();
-        env.stage("m/a.txt", "a");
-        let mods = [mod_with_rules("M", "m", vec![rule("a.txt", "new/a.txt")])];
+        env.stage("M/a.txt", "a");
+        let mods = [mod_with_rules("M", vec![rule("a.txt", "new/a.txt")])];
         deploy(&env.app, "p", &mods).unwrap();
         env.write_game("new/user.txt", "keep me");
 
@@ -563,10 +548,10 @@ mod tests {
     #[test]
     fn redeploy_replaces_previous_deployment() {
         let env = Env::new();
-        env.stage("m/a.txt", "a");
-        env.stage("m/b.txt", "b");
-        let first = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
-        let second = [mod_with_rules("M", "m", vec![rule("b.txt", "b.txt")])];
+        env.stage("M/a.txt", "a");
+        env.stage("M/b.txt", "b");
+        let first = [mod_with_rules("M", vec![rule("a.txt", "a.txt")])];
+        let second = [mod_with_rules("M", vec![rule("b.txt", "b.txt")])];
 
         deploy(&env.app, "p", &first).unwrap();
         deploy(&env.app, "p", &second).unwrap();
@@ -579,18 +564,18 @@ mod tests {
     fn failed_deploy_rolls_back_everything() {
         let env = Env::new();
         env.write_game("data/stock.dat", "original");
-        env.stage("m/a.txt", "a");
-        env.stage("m/stock.dat", "modded");
+        env.stage("M/a.txt", "a");
+        env.stage("M/stock.dat", "modded");
+        env.stage("Broken/x.txt", "x");
         let mods = [
             mod_with_rules(
                 "M",
-                "m",
                 vec![
                     rule("a.txt", "new/a.txt"),
                     rule("stock.dat", "data/stock.dat"),
                 ],
             ),
-            mod_with_rules("Broken", "m", vec![rule("missing.txt", "missing.txt")]),
+            mod_with_rules("Broken", vec![rule("missing.txt", "missing.txt")]),
         ];
 
         let err = deploy(&env.app, "p", &mods).unwrap_err();
@@ -608,9 +593,9 @@ mod tests {
     #[test]
     fn failed_redeploy_leaves_vanilla_not_the_old_deployment() {
         let env = Env::new();
-        env.stage("m/a.txt", "a");
-        let good = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
-        let bad = [mod_with_rules("M", "m", vec![rule("nope.txt", "nope.txt")])];
+        env.stage("M/a.txt", "a");
+        let good = [mod_with_rules("M", vec![rule("a.txt", "a.txt")])];
+        let bad = [mod_with_rules("M", vec![rule("nope.txt", "nope.txt")])];
         deploy(&env.app, "good", &good).unwrap();
 
         deploy(&env.app, "bad", &bad).unwrap_err();
@@ -622,8 +607,8 @@ mod tests {
     #[test]
     fn receipt_records_deployed_profile_until_clean() {
         let env = Env::new();
-        env.stage("m/a.txt", "a");
-        let mods = [mod_with_rules("M", "m", vec![rule("a.txt", "a.txt")])];
+        env.stage("M/a.txt", "a");
+        let mods = [mod_with_rules("M", vec![rule("a.txt", "a.txt")])];
         assert_eq!(deployed_profile(&env.app).unwrap(), None);
 
         deploy(&env.app, "my_profile", &mods).unwrap();
@@ -638,48 +623,31 @@ mod tests {
     }
 
     #[test]
-    fn default_deploy_uses_the_mod_name_as_the_folder() {
+    fn rejects_names_and_rules_that_escape_staging_or_the_game_dir() {
         let env = Env::new();
-        env.stage("modloader/modloader/modloader.asi", "loader");
-        env.stage("mods/cool_cars/file.txt", "hi");
-        let cars = plain_mod("Cool Cars!", "mods/cool_cars");
-
-        deploy(&env.app, "p", &[modloader(), cars]).unwrap();
-
-        assert!(env.game("modloader/Cool Cars!").is_symlink());
-    }
-
-    #[test]
-    fn rejects_paths_that_escape_staging_or_the_game_dir() {
-        let env = Env::new();
-        env.stage("m/a.txt", "a");
-        env.stage("modloader/modloader/modloader.asi", "loader");
+        env.stage("M/a.txt", "a");
+        env.stage("Modloader/modloader/modloader.asi", "loader");
         fs::write(env.app.staging_dir.join("outside.txt"), "x").unwrap();
 
-        let traversal = plain_mod("T", "../escape");
-        let err = deploy(&env.app, "p", &[traversal]).unwrap_err();
-        assert!(format!("{err:#}").contains("invalid mod_path"));
+        let bad_name = plain_mod("../escape");
+        let err = deploy(&env.app, "p", &[modloader(), bad_name]).unwrap_err();
+        assert!(format!("{err:#}").contains("cannot be used as a mod name"));
 
-        let bad_target = mod_with_rules("B", "m", vec![rule("a.txt", "../../evil")]);
+        let bad_target = mod_with_rules("M", vec![rule("a.txt", "../../evil")]);
         let err = deploy(&env.app, "p", &[bad_target]).unwrap_err();
         assert!(format!("{err:#}").contains("invalid file rules"));
 
-        let bad_source = mod_with_rules("S", "m", vec![rule("../outside.txt", "x")]);
+        let bad_source = mod_with_rules("M", vec![rule("../outside.txt", "x")]);
         assert!(deploy(&env.app, "p", &[bad_source]).is_err());
-
-        let bad_name = plain_mod("../up", "m");
-        let err = deploy(&env.app, "p", &[modloader(), bad_name]).unwrap_err();
-        assert!(format!("{err:#}").contains("cannot be used as a folder name"));
     }
 
     #[test]
     fn dot_slash_target_places_items_in_the_game_folder() {
         let env = Env::new();
-        env.stage("m/dir/a.txt", "a");
-        env.stage("m/top.txt", "t");
+        env.stage("M/dir/a.txt", "a");
+        env.stage("M/top.txt", "t");
         let mods = [mod_with_rules(
             "M",
-            "m",
             vec![rule("dir", "./"), rule("top.txt", "./")],
         )];
 
@@ -696,12 +664,8 @@ mod tests {
         let env = Env::new();
         env.write_game("stock.dat", "original");
         env.write_game(".samml_backups/stock.dat", "older original");
-        env.stage("m/stock.dat", "modded");
-        let mods = [mod_with_rules(
-            "M",
-            "m",
-            vec![rule("stock.dat", "stock.dat")],
-        )];
+        env.stage("M/stock.dat", "modded");
+        let mods = [mod_with_rules("M", vec![rule("stock.dat", "stock.dat")])];
 
         let err = deploy(&env.app, "p", &mods).unwrap_err();
 
