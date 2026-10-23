@@ -6,13 +6,61 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // App manifest
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppManifest {
     pub game_dir: PathBuf,
     pub staging_dir: PathBuf,
     pub profiles_dir: PathBuf,
     #[serde(default)]
     pub steam_app_id: Option<u32>,
+}
+
+// Setting up: checking the app config, and suggesting one on first run.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigField {
+    GameDir,
+    StagingDir,
+    ProfilesDir,
+}
+
+/// One thing wrong with the config, in words the player can act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigProblem {
+    pub field: ConfigField,
+    pub message: String,
+}
+
+/// Where the config file stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigStatus {
+    /// First run: there is no config file yet.
+    Missing,
+    /// The file exists but cannot be read or parsed.
+    Broken {
+        reason: String,
+    },
+    /// The file parses, but some of its paths are not usable (e.g. the game
+    /// was moved).
+    NeedsAttention {
+        config: AppManifest,
+        problems: Vec<ConfigProblem>,
+    },
+    Ready {
+        config: AppManifest,
+    },
+}
+
+/// Starting values for the first-run setup screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigSuggestion {
+    /// The first GTA: San Andreas install found in a Steam library, if any.
+    pub game_dir: Option<PathBuf>,
+    /// Every install found, in case there is more than one.
+    pub found_game_dirs: Vec<PathBuf>,
+    pub staging_dir: PathBuf,
+    pub profiles_dir: PathBuf,
+    pub steam_app_id: u32,
 }
 
 // Mod library: every folder in STAGING_DIR is a mod, named after its folder.

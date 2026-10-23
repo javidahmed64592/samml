@@ -18,7 +18,8 @@ crates/samml-core/   all logic; no printing, no argument parsing
   lib.rs             module list only
   manifest.rs        serde data types only (no behaviour)
   -- data and files
-  config.rs          load the app manifest
+  config.rs          the app config: load, check, save, first-run status and suggestions
+  platform.rs        XDG locations (config file, default staging/profiles) and finding the game in Steam libraries
   library.rs         the mods in staging and the library file: ids, list, add, rename, set rules, delete
   profiles.rs        profile files: list, create, save, rename, duplicate, delete
   receipt.rs         read/write/remove the deploy receipt
@@ -91,6 +92,17 @@ Placing files inside another mod's whole-folder link (e.g. `modloader/Ragdoll/..
 `replaces_game_file` marks links that will back up and replace a file that is not ours.
 - **Deployed state** compares the receipt and the links on disk with the plan: `NotDeployed`, `OtherProfile`, `UpToDate`, or `OutOfDate` with the `missing` (to add), `stale` (to remove) and `changed` (wrong target) paths.
 Renaming a mod, adding or removing mods, changing rules or toggling a mod all show up as `OutOfDate`, which is how the UI knows to prompt for a redeploy.
+- **Config location**: `$XDG_CONFIG_HOME/samml/config.json` (default `~/.config/samml/config.json`).
+Default staging and profiles folders are `$XDG_DATA_HOME/samml/{staging,profiles}` (default `~/.local/share/samml/...`).
+XDG variables are used only when absolute.
+The CLI uses `./app_manifest.json` if it exists, otherwise the standard location, or an explicit path; `samml init` always targets the standard location unless given a path.
+- **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta_sa.exe` (any case).
+Installs reached two ways (symlinks) are reported once.
+- **Config validation** (`config::check_config`) returns a list of problems per field, in words the player can act on.
+The game folder must exist and contain `gta_sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
+- **Saving config** (`config::save_config`) refuses a config with problems and writes atomically, so a saved config is always one the app can start with.
+`config_status` tells the UI whether to show setup: `Missing` (first run), `Broken` (unreadable), `NeedsAttention` (parses but paths need fixing, e.g. the game moved; the existing values are kept for the form) or `Ready`.
+`suggest_config` gives the setup screen its starting values.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.
 
 ## Requirements
@@ -129,7 +141,7 @@ Renaming a mod, adding or removing mods, changing rules or toggling a mod all sh
 4. ~~Mod library: mods independent of profiles, stable ids, library file, delete everywhere.~~ Done (`library.rs`, `usage.rs`, `resolve.rs`).
 5. ~~Importing files into a mod folder (copy from native paths) and listing a mod's files for the rule picker.~~ Done (`import.rs`, `browse.rs`).
 6. ~~`plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt (including a rename since the last deploy).~~ Done (`plan.rs`, `links.rs`).
-7. Config: load, save, validate, platform config dir.
+7. ~~Config: load, save, validate, platform config dir.~~ Done (`config.rs`, `platform.rs`).
 8. `Manager` facade struct over the above so each Tauri command is a one-liner.
 
 ### Phase B - scaffold

@@ -3,7 +3,8 @@
 //!
 //! Data and files
 //! - `manifest`: data types (app config, library, profiles)
-//! - `config`: loading the app manifest
+//! - `config`: the app config: load, check, save, first-run status
+//! - `platform`: XDG locations and finding the game in Steam libraries
 //! - `library`: the mods in staging and their deploy rules
 //! - `profiles`: profile files on disk (list, create, save, rename, ...)
 //! - `receipt`: record of what a deploy changed
@@ -34,6 +35,7 @@ pub mod links;
 pub mod manifest;
 pub mod paths;
 pub mod plan;
+pub mod platform;
 pub mod profile_mods;
 pub mod profiles;
 pub mod receipt;
