@@ -5,14 +5,62 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-// App manifest
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppManifest {
+// App config
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppConfig {
     pub game_dir: PathBuf,
     pub staging_dir: PathBuf,
     pub profiles_dir: PathBuf,
     #[serde(default)]
     pub steam_app_id: Option<u32>,
+}
+
+// Setting up: checking the app config, and suggesting one on first run.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigField {
+    GameDir,
+    StagingDir,
+    ProfilesDir,
+}
+
+/// One thing wrong with the config, in words the player can act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigProblem {
+    pub field: ConfigField,
+    pub message: String,
+}
+
+/// Where the config file stands.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfigStatus {
+    /// First run: there is no config file yet.
+    Missing,
+    /// The file exists but cannot be read or parsed.
+    Broken {
+        reason: String,
+    },
+    /// The file parses, but some of its paths are not usable (e.g. the game
+    /// was moved).
+    NeedsAttention {
+        config: AppConfig,
+        problems: Vec<ConfigProblem>,
+    },
+    Ready {
+        config: AppConfig,
+    },
+}
+
+/// Starting values for the first-run setup screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigSuggestion {
+    /// The first GTA: San Andreas install found in a Steam library, if any.
+    pub game_dir: Option<PathBuf>,
+    /// Every install found, in case there is more than one.
+    pub found_game_dirs: Vec<PathBuf>,
+    pub staging_dir: PathBuf,
+    pub profiles_dir: PathBuf,
+    pub steam_app_id: u32,
 }
 
 // Mod library: every folder in STAGING_DIR is a mod, named after its folder.
@@ -231,17 +279,17 @@ pub struct FileEntry {
 mod tests {
     use super::*;
 
-    const APP_MANIFEST: &str = include_str!("../../../tests/app_manifest.json");
+    const APP_CONFIG: &str = include_str!("../../../tests/config.json");
     const TEST_PROFILE: &str = include_str!("../../../tests/profiles/test_profile.json");
     const TEST_LIBRARY: &str = include_str!("../../../tests/library/.samml_library.json");
 
     #[test]
-    fn parses_app_manifest() {
-        let manifest: AppManifest = serde_json::from_str(APP_MANIFEST).unwrap();
-        assert!(!manifest.game_dir.as_os_str().is_empty());
-        assert!(!manifest.staging_dir.as_os_str().is_empty());
-        assert!(!manifest.profiles_dir.as_os_str().is_empty());
-        assert_eq!(manifest.steam_app_id, Some(12120));
+    fn parses_config() {
+        let config: AppConfig = serde_json::from_str(APP_CONFIG).unwrap();
+        assert!(!config.game_dir.as_os_str().is_empty());
+        assert!(!config.staging_dir.as_os_str().is_empty());
+        assert!(!config.profiles_dir.as_os_str().is_empty());
+        assert_eq!(config.steam_app_id, Some(12120));
     }
 
     #[test]
