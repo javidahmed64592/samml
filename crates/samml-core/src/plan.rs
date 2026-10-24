@@ -8,7 +8,7 @@
 
 use crate::links::{self, LinkPair, MODLOADER_DIR};
 use crate::manifest::{
-    AppManifest, DeployDrift, DeployMod, DeployPlan, DeployState, PlanConflict, PlannedLink,
+    AppConfig, DeployDrift, DeployMod, DeployPlan, DeployState, PlanConflict, PlannedLink,
     PlannedMod, Profile, ProfileModView,
 };
 use crate::receipt::{self, Receipt};
@@ -54,7 +54,7 @@ fn touches_modloader(rel_link: &str) -> bool {
 
 fn describe_links(
     pairs: Vec<LinkPair>,
-    app: &AppManifest,
+    app: &AppConfig,
     receipt: Option<&Receipt>,
 ) -> Vec<PlannedLink> {
     pairs
@@ -74,7 +74,7 @@ fn describe_links(
 fn plan_mod(
     view: &ProfileModView,
     rules: Option<&DeployMod>,
-    app: &AppManifest,
+    app: &AppConfig,
     receipt: Option<&Receipt>,
 ) -> PlannedMod {
     let planned = |links, problem| PlannedMod {
@@ -102,7 +102,7 @@ fn plan_mod(
 fn check_modloader_order(
     mods: &mut [PlannedMod],
     needs_modloader: &[bool],
-    app: &AppManifest,
+    app: &AppConfig,
     receipt: Option<&Receipt>,
 ) {
     let mut available = modloader_in_vanilla_game(&app.game_dir, receipt);
@@ -149,7 +149,7 @@ fn points_at(game_dir: &Path, rel: &str, expected: &Path) -> bool {
 /// Compares what is deployed (the receipt and the links on disk) with the
 /// links the profile's active mods need.
 fn deploy_state(
-    app: &AppManifest,
+    app: &AppConfig,
     profile_slug: &str,
     mods: &[PlannedMod],
     receipt: Option<&Receipt>,
@@ -198,7 +198,7 @@ fn deploy_state(
 }
 
 /// What deploying `profile` (whose slug is `profile_slug`) would do.
-pub fn plan_deploy(app: &AppManifest, profile_slug: &str, profile: &Profile) -> Result<DeployPlan> {
+pub fn plan_deploy(app: &AppConfig, profile_slug: &str, profile: &Profile) -> Result<DeployPlan> {
     let views = resolve::describe_profile(&app.staging_dir, profile)?;
     let library = library::load_library(&app.staging_dir)?;
     let receipt = receipt::read(&app.game_dir)?;
@@ -243,7 +243,7 @@ mod tests {
 
     struct Env {
         _root: TempDir,
-        app: AppManifest,
+        app: AppConfig,
         profile: Profile,
     }
 
@@ -257,7 +257,7 @@ mod tests {
     impl Env {
         fn new() -> Self {
             let root = TempDir::new().unwrap();
-            let app = AppManifest {
+            let app = AppConfig {
                 game_dir: root.path().join("game"),
                 staging_dir: root.path().join("staging"),
                 profiles_dir: root.path().join("profiles"),

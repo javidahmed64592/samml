@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     // samml [config.json] list
     // samml [config.json] mods
     // samml [config.json] <show|deploy|launch|run> <profile_slug>
-    let (manifest_path, command, argument) = match args.len() {
+    let (config_path, command, argument) = match args.len() {
         2 if matches!(args[1].as_str(), "init" | "clean" | "list" | "mods") => {
             (None, args[1].clone(), None)
         }
@@ -34,20 +34,20 @@ fn main() -> Result<()> {
     let dirs = PlatformDirs::from_env()?;
     if command == "init" {
         return init(
-            &manifest_path.unwrap_or_else(|| dirs.config_file()),
+            &config_path.unwrap_or_else(|| dirs.config_file()),
             profile_slug.as_deref(),
             &dirs,
         );
     }
-    let manifest_path = manifest_path.unwrap_or_else(|| default_config_path(&dirs));
-    if !manifest_path.exists() {
+    let config_path = config_path.unwrap_or_else(|| dirs.config_file());
+    if !config_path.exists() {
         bail!(
             "no config found at {}; run `samml init` to set up",
-            manifest_path.display()
+            config_path.display()
         );
     }
 
-    let app = config::load_app_manifest(&manifest_path)?;
+    let app = config::load_config(&config_path)?;
 
     match command.as_str() {
         "show" | "deploy" | "launch" | "run" => {
@@ -90,7 +90,7 @@ fn main() -> Result<()> {
         "new" => {
             let name = profile_slug
                 .as_deref()
-                .context("usage: samml [app_manifest.json] new <profile name>")?;
+                .context("usage: samml [config.json] new <profile name>")?;
             let (slug, path) = profiles::create_profile(&app.profiles_dir, name)?;
             println!("Created profile '{name}' ({slug}) at {}", path.display());
         }
@@ -127,14 +127,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+fn deploy(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
     let mods = resolve::resolve_profile(&app.staging_dir, profile)?;
     deploy::deploy(app, slug, &mods)?;
     println!("Deployed.");
     Ok(())
 }
 
-fn launch(app: &manifest::AppManifest) -> Result<()> {
+fn launch(app: &manifest::AppConfig) -> Result<()> {
     launch::launch(app)?;
     println!(
         "Launched Steam App ID {}.",
@@ -143,7 +143,7 @@ fn launch(app: &manifest::AppManifest) -> Result<()> {
     Ok(())
 }
 
-fn print_plan(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+fn print_plan(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
     let plan = plan::plan_deploy(app, slug, profile)?;
     let links: usize = plan
         .mods
@@ -186,17 +186,6 @@ fn print_plan(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profi
     Ok(())
 }
 
-/// The config to use when none is named: `./app_manifest.json` if there is
-/// one (handy when developing), otherwise the standard per-user location.
-fn default_config_path(dirs: &PlatformDirs) -> PathBuf {
-    let local = PathBuf::from("app_manifest.json");
-    if local.exists() {
-        local
-    } else {
-        dirs.config_file()
-    }
-}
-
 /// First-run setup: find the game (or take it from the command line), pick
 /// the standard folders, and save the config. If a config exists but its
 /// paths no longer work (e.g. the game moved), only the game folder is
@@ -218,7 +207,7 @@ fn init(path: &Path, game_dir: Option<&str>, dirs: &PlatformDirs) -> Result<()> 
             "could not find GTA San Andreas in any Steam library; run `samml init <game folder>`",
         )?,
     };
-    let new_config = manifest::AppManifest {
+    let new_config = manifest::AppConfig {
         game_dir,
         staging_dir,
         profiles_dir,

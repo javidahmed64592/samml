@@ -20,20 +20,20 @@ In this guide, we will use the following variables for file paths:
 ## Setting Up
 
 Run `samml init` once.
-It looks for GTA: San Andreas in your Steam libraries (including extra library folders and the Flatpak install), then saves the app config to `~/.config/samml/config.json` and creates the default folders:
+It looks for GTA: San Andreas in your Steam libraries (including extra library folders and the Flatpak install), then saves the config to `~/.config/samml/config.json` and creates the default folders:
 
 - `${STAGING_DIR}`: `~/.local/share/samml/staging`
 - `${PROFILES_DIR}`: `~/.local/share/samml/profiles`
 
 (`$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` are respected.)
 If the game is not found, point it at the game folder: `samml init "/path/to/Grand Theft Auto San Andreas"`.
-The game folder must contain `gta-sa.exe`.
+The game folder must contain `gta_sa.exe`.
 
-## App Manifest
+## Config
 
-The app config is a JSON file that defines the game directory, staging directory, and the profiles directory.
-Commands use `./app_manifest.json` if it exists (handy when developing), otherwise `~/.config/samml/config.json`, or a path given as the first argument.
-`app_manifest.example.json` shows the format:
+The config is a JSON file that defines the game directory, staging directory, and the profiles directory.
+`samml init` creates it at `~/.config/samml/config.json`; a different file can be named as the first argument of any command.
+`config.example.json` shows the format:
 
 ```json
 {

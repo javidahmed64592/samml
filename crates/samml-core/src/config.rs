@@ -1,4 +1,4 @@
-//! The app config: loading, checking and saving `AppManifest`, and working
+//! The app config: loading, checking and saving `AppConfig`, and working
 //! out where the player stands on first run.
 //!
 //! Owns reading and writing the config file and deciding whether its paths
@@ -6,18 +6,18 @@
 //! `platform`. The CLI and the UI use `config_status` to decide between
 //! "show the setup screen" and "carry on".
 
-use crate::manifest::{AppManifest, ConfigField, ConfigProblem, ConfigStatus, ConfigSuggestion};
+use crate::manifest::{AppConfig, ConfigField, ConfigProblem, ConfigStatus, ConfigSuggestion};
 use crate::platform::{self, GTA_SA_STEAM_APP_ID, PlatformDirs};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
-pub fn load_app_manifest(path: &Path) -> Result<AppManifest> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("reading app manifest {}", path.display()))?;
-    let manifest: AppManifest = serde_json::from_str(&text)
-        .with_context(|| format!("parsing app manifest {}", path.display()))?;
+pub fn load_config(path: &Path) -> Result<AppConfig> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("reading config {}", path.display()))?;
+    let manifest: AppConfig = serde_json::from_str(&text)
+        .with_context(|| format!("parsing config {}", path.display()))?;
     Ok(manifest)
 }
 
@@ -62,7 +62,7 @@ fn check_data_dir(field: ConfigField, dir: &Path, problems: &mut Vec<ConfigProbl
 
 /// Folders must not overlap: deploy writes into the game folder, and the
 /// staging folder lists every folder in it as a mod.
-fn check_overlaps(config: &AppManifest, problems: &mut Vec<ConfigProblem>) {
+fn check_overlaps(config: &AppConfig, problems: &mut Vec<ConfigProblem>) {
     let (game, staging, profiles) = (&config.game_dir, &config.staging_dir, &config.profiles_dir);
     if !(game.is_absolute() && staging.is_absolute() && profiles.is_absolute()) {
         return;
@@ -97,7 +97,7 @@ fn check_overlaps(config: &AppManifest, problems: &mut Vec<ConfigProblem>) {
 
 /// Everything wrong with the config's paths; empty if it is usable. Does
 /// not change anything on disk.
-pub fn check_config(config: &AppManifest) -> Vec<ConfigProblem> {
+pub fn check_config(config: &AppConfig) -> Vec<ConfigProblem> {
     let mut problems = Vec::new();
     check_game_dir(&config.game_dir, &mut problems);
     check_data_dir(ConfigField::StagingDir, &config.staging_dir, &mut problems);
@@ -122,7 +122,7 @@ pub fn config_status(path: &Path) -> ConfigStatus {
             };
         }
     };
-    let config: AppManifest = match serde_json::from_str(&text) {
+    let config: AppConfig = match serde_json::from_str(&text) {
         Ok(config) => config,
         Err(e) => {
             return ConfigStatus::Broken {
@@ -143,7 +143,7 @@ pub fn config_status(path: &Path) -> ConfigStatus {
 /// Saves the config (atomically), creating the file's folder if needed.
 /// Refuses a config whose paths are not usable, so a saved config is always
 /// one the app can start with.
-pub fn save_config(path: &Path, config: &AppManifest) -> Result<()> {
+pub fn save_config(path: &Path, config: &AppConfig) -> Result<()> {
     let problems = check_config(config);
     if !problems.is_empty() {
         let messages: Vec<_> = problems
@@ -161,7 +161,7 @@ pub fn save_config(path: &Path, config: &AppManifest) -> Result<()> {
 }
 
 /// Creates the staging and profiles folders if they do not exist yet.
-pub fn ensure_dirs(config: &AppManifest) -> Result<()> {
+pub fn ensure_dirs(config: &AppConfig) -> Result<()> {
     for dir in [&config.staging_dir, &config.profiles_dir] {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
@@ -197,7 +197,7 @@ mod tests {
 
     struct Env {
         root: TempDir,
-        config: AppManifest,
+        config: AppConfig,
     }
 
     impl Env {
@@ -207,7 +207,7 @@ mod tests {
             let game = root.path().join("Game");
             fs::create_dir_all(&game).unwrap();
             fs::write(game.join("gta-sa.exe"), "").unwrap();
-            let config = AppManifest {
+            let config = AppConfig {
                 game_dir: game,
                 staging_dir: root.path().join("staging"),
                 profiles_dir: root.path().join("profiles"),
@@ -231,16 +231,16 @@ mod tests {
     // --- loading ---
 
     #[test]
-    fn loads_app_manifest() {
-        let manifest = load_app_manifest(&repo_path("tests/app_manifest.json")).unwrap();
+    fn loads_config() {
+        let manifest = load_config(&repo_path("tests/config.json")).unwrap();
         assert!(!manifest.game_dir.as_os_str().is_empty());
         assert_eq!(manifest.steam_app_id, Some(12120));
     }
 
     #[test]
-    fn load_app_manifest_reports_missing_file() {
-        let err = load_app_manifest(&repo_path("does_not_exist.json")).unwrap_err();
-        assert!(err.to_string().contains("reading app manifest"));
+    fn load_config_reports_missing_file() {
+        let err = load_config(&repo_path("does_not_exist.json")).unwrap_err();
+        assert!(err.to_string().contains("reading config"));
     }
 
     // --- checking ---
@@ -371,7 +371,7 @@ mod tests {
 
         assert!(matches!(config_status(&file), ConfigStatus::Ready { .. }));
         assert_eq!(
-            load_app_manifest(&file).unwrap().staging_dir,
+            load_config(&file).unwrap().staging_dir,
             env.config.staging_dir
         );
         let leftovers: Vec<_> = fs::read_dir(file.parent().unwrap()).unwrap().collect();

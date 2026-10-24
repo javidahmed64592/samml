@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-// App manifest
+// App config
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AppManifest {
+pub struct AppConfig {
     pub game_dir: PathBuf,
     pub staging_dir: PathBuf,
     pub profiles_dir: PathBuf,
@@ -43,11 +43,11 @@ pub enum ConfigStatus {
     /// The file parses, but some of its paths are not usable (e.g. the game
     /// was moved).
     NeedsAttention {
-        config: AppManifest,
+        config: AppConfig,
         problems: Vec<ConfigProblem>,
     },
     Ready {
-        config: AppManifest,
+        config: AppConfig,
     },
 }
 
@@ -279,17 +279,17 @@ pub struct FileEntry {
 mod tests {
     use super::*;
 
-    const APP_MANIFEST: &str = include_str!("../../../tests/app_manifest.json");
+    const APP_CONFIG: &str = include_str!("../../../tests/config.json");
     const TEST_PROFILE: &str = include_str!("../../../tests/profiles/test_profile.json");
     const TEST_LIBRARY: &str = include_str!("../../../tests/library/.samml_library.json");
 
     #[test]
-    fn parses_app_manifest() {
-        let manifest: AppManifest = serde_json::from_str(APP_MANIFEST).unwrap();
-        assert!(!manifest.game_dir.as_os_str().is_empty());
-        assert!(!manifest.staging_dir.as_os_str().is_empty());
-        assert!(!manifest.profiles_dir.as_os_str().is_empty());
-        assert_eq!(manifest.steam_app_id, Some(12120));
+    fn parses_config() {
+        let config: AppConfig = serde_json::from_str(APP_CONFIG).unwrap();
+        assert!(!config.game_dir.as_os_str().is_empty());
+        assert!(!config.staging_dir.as_os_str().is_empty());
+        assert!(!config.profiles_dir.as_os_str().is_empty());
+        assert_eq!(config.steam_app_id, Some(12120));
     }
 
     #[test]

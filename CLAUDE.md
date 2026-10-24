@@ -9,7 +9,7 @@ Unix-only APIs (e.g. symlinks) are fine.
 ## Product goal
 
 The UI manages everything.
-Players never open mod folders, `app_manifest.json` or profile files themselves.
+Players never open mod folders, the config file or profile files themselves.
 
 ## Workspace layout
 
@@ -40,7 +40,7 @@ crates/samml-core/   all logic; no printing, no argument parsing
 crates/samml-cli/    thin wrapper: parses args, calls core, prints
 src-tauri/           (planned) Tauri commands, one-line calls into core
 ui/                  (planned) Leptos frontend compiled to WASM with Trunk
-tests/               fixtures shared by tests (app_manifest.json, profiles/, library/)
+tests/               fixtures shared by tests (config.json, profiles/, library/)
 ```
 
 Module dependencies run one way: helpers <- data/files <- operations. `library` and `profile_mods` do not know about each other; `usage` and `resolve` are where they meet.
@@ -51,14 +51,14 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 - Core never prints and never reads `std::env::args`; it returns data or `anyhow::Result`.
 - One concern per module. A module's top doc comment says what it owns and which modules it depends on. New logic goes in the module for that concern; do not grow `lib.rs`.
 - `manifest.rs` holds data types only. Types that cross the Tauri boundary derive `Serialize` and `Deserialize`.
-- Core functions take explicit paths or `&AppManifest`; no hidden global state.
+- Core functions take explicit paths or `&AppConfig`; no hidden global state.
 - Every behaviour change has a test. Filesystem tests use `tempfile`; fixtures live in `tests/`.
 - Checks before every PR: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo deny check`.
-- `app_manifest.json` is the developer's local config and is gitignored; `app_manifest.example.json` is the committed template.
+- The config lives at `~/.config/samml/config.json` (see Decisions); `config.example.json` is the committed template. Nothing user-specific is kept in the repo, so there is nothing to gitignore.
 
 ## Concepts
 
-- **GAME_DIR / STAGING_DIR / PROFILES_DIR**: set in the app manifest.
+- **GAME_DIR / STAGING_DIR / PROFILES_DIR**: set in the config (`AppConfig`).
 - **Library**: STAGING_DIR is the mod library. Every visible folder directly inside it (flat, no nesting) is a mod, and the folder name is the mod's name. Dropping a folder in makes it available to every profile; it gets an id the next time the library is listed (`library::list_mods` / `sync_library`).
 - **Library file** (`STAGING_DIR/.samml_library.json`): the single source of truth for mods: `{ "mods": { "<id>": { "name", "files"? } } }`. Keeping it inside STAGING_DIR means zipping that folder backs up the whole library (a planned export/import feature, which will also bundle PROFILES_DIR).
 - **Mod id**: a slug of the name plus four random hex digits (`widescreen_fix-9906`), assigned once and never changed. It is what profiles refer to.
@@ -95,11 +95,11 @@ Renaming a mod, adding or removing mods, changing rules or toggling a mod all sh
 - **Config location**: `$XDG_CONFIG_HOME/samml/config.json` (default `~/.config/samml/config.json`).
 Default staging and profiles folders are `$XDG_DATA_HOME/samml/{staging,profiles}` (default `~/.local/share/samml/...`).
 XDG variables are used only when absolute.
-The CLI uses `./app_manifest.json` if it exists, otherwise the standard location, or an explicit path; `samml init` always targets the standard location unless given a path.
-- **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta-sa.exe` (any case).
+The CLI uses the standard location, or an explicit path given as its first argument; there is no other lookup.
+- **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta_sa.exe` (any case).
 Installs reached two ways (symlinks) are reported once.
 - **Config validation** (`config::check_config`) returns a list of problems per field, in words the player can act on.
-The game folder must exist and contain `gta-sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
+The game folder must exist and contain `gta_sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
 - **Saving config** (`config::save_config`) refuses a config with problems and writes atomically, so a saved config is always one the app can start with.
 `config_status` tells the UI whether to show setup: `Missing` (first run), `Broken` (unreadable), `NeedsAttention` (parses but paths need fixing, e.g. the game moved; the existing values are kept for the form) or `Ready`.
 `suggest_config` gives the setup screen its starting values.
