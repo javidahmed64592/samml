@@ -27,7 +27,7 @@ It looks for GTA: San Andreas in your Steam libraries (including extra library f
 
 (`$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` are respected.)
 If the game is not found, point it at the game folder: `samml init "/path/to/Grand Theft Auto San Andreas"`.
-The game folder must contain `gta_sa.exe`.
+The game folder must contain `gta-sa.exe`.
 
 ## App Manifest
 

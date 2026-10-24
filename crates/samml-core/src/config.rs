@@ -206,7 +206,7 @@ mod tests {
             let root = TempDir::new().unwrap();
             let game = root.path().join("Game");
             fs::create_dir_all(&game).unwrap();
-            fs::write(game.join("gta_sa.exe"), "").unwrap();
+            fs::write(game.join("gta-sa.exe"), "").unwrap();
             let config = AppManifest {
                 game_dir: game,
                 staging_dir: root.path().join("staging"),
@@ -272,7 +272,7 @@ mod tests {
         let problems = env.problems();
         assert_eq!(problems[0].0, ConfigField::GameDir);
         assert!(
-            problems[0].1.contains("gta_sa.exe not found"),
+            problems[0].1.contains("gta-sa.exe not found"),
             "{problems:?}"
         );
     }
@@ -410,7 +410,7 @@ mod tests {
             .join(".local/share/Steam/steamapps/common")
             .join(platform::GAME_FOLDER_NAME);
         fs::create_dir_all(&game).unwrap();
-        fs::write(game.join("gta_sa.exe"), "").unwrap();
+        fs::write(game.join("gta-sa.exe"), "").unwrap();
         let dirs = PlatformDirs::new(home.path().to_path_buf(), None, None);
 
         let suggestion = suggest_config(&dirs);

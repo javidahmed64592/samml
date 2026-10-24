@@ -96,10 +96,10 @@ Renaming a mod, adding or removing mods, changing rules or toggling a mod all sh
 Default staging and profiles folders are `$XDG_DATA_HOME/samml/{staging,profiles}` (default `~/.local/share/samml/...`).
 XDG variables are used only when absolute.
 The CLI uses `./app_manifest.json` if it exists, otherwise the standard location, or an explicit path; `samml init` always targets the standard location unless given a path.
-- **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta_sa.exe` (any case).
+- **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta-sa.exe` (any case).
 Installs reached two ways (symlinks) are reported once.
 - **Config validation** (`config::check_config`) returns a list of problems per field, in words the player can act on.
-The game folder must exist and contain `gta_sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
+The game folder must exist and contain `gta-sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
 - **Saving config** (`config::save_config`) refuses a config with problems and writes atomically, so a saved config is always one the app can start with.
 `config_status` tells the UI whether to show setup: `Missing` (first run), `Broken` (unreadable), `NeedsAttention` (parses but paths need fixing, e.g. the game moved; the existing values are kept for the form) or `Ready`.
 `suggest_config` gives the setup screen its starting values.

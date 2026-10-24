@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 pub const GAME_FOLDER_NAME: &str = "Grand Theft Auto San Andreas";
 
 /// The executable that marks a folder as a GTA: San Andreas install.
-pub const GAME_EXECUTABLE: &str = "gta_sa.exe";
+pub const GAME_EXECUTABLE: &str = "gta-sa.exe";
 
 /// Steam's app id for GTA: San Andreas.
 pub const GTA_SA_STEAM_APP_ID: u32 = 12120;
@@ -210,7 +210,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         assert!(!is_game_dir(dir.path()));
         assert!(!is_game_dir(&dir.path().join("nope")));
-        fs::write(dir.path().join("GTA_SA.EXE"), "").unwrap();
+        fs::write(dir.path().join("gta-sa.exe"), "").unwrap();
         assert!(is_game_dir(dir.path()));
     }
 
