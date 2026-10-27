@@ -1,6 +1,5 @@
 {
   "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/",
-  "staging_dir": "/path/to/samml/staging/",
-  "profiles_dir": "/path/to/samml/profiles/",
+  "samml_dir": "/path/to/samml/",
   "steam_app_id": 12120
 }

@@ -11,7 +11,23 @@ use crate::platform::{self, GTA_SA_STEAM_APP_ID, PlatformDirs};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Folder names inside the SAMML folder.
+const STAGING_DIR_NAME: &str = "staging";
+const PROFILES_DIR_NAME: &str = "profiles";
+
+impl AppConfig {
+    /// The mod library: one folder per mod.
+    pub fn staging_dir(&self) -> PathBuf {
+        self.samml_dir.join(STAGING_DIR_NAME)
+    }
+
+    /// The profile files.
+    pub fn profiles_dir(&self) -> PathBuf {
+        self.samml_dir.join(PROFILES_DIR_NAME)
+    }
+}
 
 pub fn load_config(path: &Path) -> Result<AppConfig> {
     let text =
@@ -47,9 +63,10 @@ fn check_game_dir(dir: &Path, problems: &mut Vec<ConfigProblem>) {
     }
 }
 
-/// A folder SAMML will create if needed: it may be missing, but if it is
+/// The SAMML folder is created on demand: it may be missing, but if it is
 /// there it must be a folder.
-fn check_data_dir(field: ConfigField, dir: &Path, problems: &mut Vec<ConfigProblem>) {
+fn check_samml_dir(dir: &Path, problems: &mut Vec<ConfigProblem>) {
+    let field = ConfigField::SammlDir;
     if !dir.is_absolute() {
         problems.push(problem(field, "must be an absolute path"));
     } else if dir.exists() && !dir.is_dir() {
@@ -60,38 +77,23 @@ fn check_data_dir(field: ConfigField, dir: &Path, problems: &mut Vec<ConfigProbl
     }
 }
 
-/// Folders must not overlap: deploy writes into the game folder, and the
-/// staging folder lists every folder in it as a mod.
-fn check_overlaps(config: &AppConfig, problems: &mut Vec<ConfigProblem>) {
-    let (game, staging, profiles) = (&config.game_dir, &config.staging_dir, &config.profiles_dir);
-    if !(game.is_absolute() && staging.is_absolute() && profiles.is_absolute()) {
+/// The SAMML folder and the game folder must not overlap: deploy writes
+/// into the game folder, and the library is a folder of mods.
+fn check_overlap(config: &AppConfig, problems: &mut Vec<ConfigProblem>) {
+    let (game, samml) = (&config.game_dir, &config.samml_dir);
+    if !(game.is_absolute() && samml.is_absolute()) {
         return;
     }
-    if staging == profiles {
+    if samml.starts_with(game) {
         problems.push(problem(
-            ConfigField::ProfilesDir,
-            "must be a different folder from the staging folder",
+            ConfigField::SammlDir,
+            "must not be inside the game folder",
         ));
-    } else if profiles.starts_with(staging) {
+    } else if game.starts_with(samml) {
         problems.push(problem(
-            ConfigField::ProfilesDir,
-            "must not be inside the staging folder (it would show up as a mod)",
+            ConfigField::SammlDir,
+            "must not contain the game folder",
         ));
-    } else if staging.starts_with(profiles) {
-        problems.push(problem(
-            ConfigField::StagingDir,
-            "must not be inside the profiles folder",
-        ));
-    }
-    for (field, dir) in [
-        (ConfigField::StagingDir, staging),
-        (ConfigField::ProfilesDir, profiles),
-    ] {
-        if dir.starts_with(game) {
-            problems.push(problem(field, "must not be inside the game folder"));
-        } else if game.starts_with(dir) {
-            problems.push(problem(field, "must not contain the game folder"));
-        }
     }
 }
 
@@ -100,13 +102,8 @@ fn check_overlaps(config: &AppConfig, problems: &mut Vec<ConfigProblem>) {
 pub fn check_config(config: &AppConfig) -> Vec<ConfigProblem> {
     let mut problems = Vec::new();
     check_game_dir(&config.game_dir, &mut problems);
-    check_data_dir(ConfigField::StagingDir, &config.staging_dir, &mut problems);
-    check_data_dir(
-        ConfigField::ProfilesDir,
-        &config.profiles_dir,
-        &mut problems,
-    );
-    check_overlaps(config, &mut problems);
+    check_samml_dir(&config.samml_dir, &mut problems);
+    check_overlap(config, &mut problems);
     problems
 }
 
@@ -160,10 +157,11 @@ pub fn save_config(path: &Path, config: &AppConfig) -> Result<()> {
     fs::rename(&tmp, path).with_context(|| format!("saving {}", path.display()))
 }
 
-/// Creates the staging and profiles folders if they do not exist yet.
+/// Creates the SAMML folder with its staging and profiles folders if they
+/// do not exist yet.
 pub fn ensure_dirs(config: &AppConfig) -> Result<()> {
-    for dir in [&config.staging_dir, &config.profiles_dir] {
-        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+    for dir in [config.staging_dir(), config.profiles_dir()] {
+        fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     Ok(())
 }
@@ -171,14 +169,13 @@ pub fn ensure_dirs(config: &AppConfig) -> Result<()> {
 // --- First run -----------------------------------------------------------
 
 /// Starting values for the first-run screen: the game if it can be found,
-/// and the standard folders for staging and profiles.
+/// and the standard SAMML folder.
 pub fn suggest_config(dirs: &PlatformDirs) -> ConfigSuggestion {
     let found_game_dirs = platform::find_game_dirs(dirs);
     ConfigSuggestion {
         game_dir: found_game_dirs.first().cloned(),
         found_game_dirs,
-        staging_dir: dirs.default_staging_dir(),
-        profiles_dir: dirs.default_profiles_dir(),
+        samml_dir: dirs.default_samml_dir(),
         steam_app_id: GTA_SA_STEAM_APP_ID,
     }
 }
@@ -201,7 +198,7 @@ mod tests {
     }
 
     impl Env {
-        /// A fake game folder plus staging and profiles folders beside it.
+        /// A fake game folder with a SAMML folder beside it.
         fn new() -> Self {
             let root = TempDir::new().unwrap();
             let game = root.path().join("Game");
@@ -209,8 +206,7 @@ mod tests {
             fs::write(game.join("gta-sa.exe"), "").unwrap();
             let config = AppConfig {
                 game_dir: game,
-                staging_dir: root.path().join("staging"),
-                profiles_dir: root.path().join("profiles"),
+                samml_dir: root.path().join("samml"),
                 steam_app_id: Some(12120),
             };
             Env { root, config }
@@ -246,7 +242,7 @@ mod tests {
     // --- checking ---
 
     #[test]
-    fn a_good_config_has_no_problems_even_if_staging_does_not_exist_yet() {
+    fn a_good_config_has_no_problems_even_if_the_samml_folder_does_not_exist_yet() {
         let env = Env::new();
         assert!(env.problems().is_empty());
     }
@@ -278,58 +274,51 @@ mod tests {
     }
 
     #[test]
-    fn staging_and_profiles_must_be_absolute_folders() {
+    fn the_samml_folder_must_be_an_absolute_folder() {
         let mut env = Env::new();
         let file = env.root.path().join("a_file");
         fs::write(&file, "").unwrap();
-        env.config.staging_dir = PathBuf::from("staging");
-        env.config.profiles_dir = file;
 
+        env.config.samml_dir = PathBuf::from("samml");
         let problems = env.problems();
+        assert_eq!(problems[0].0, ConfigField::SammlDir);
+        assert!(problems[0].1.contains("absolute"));
 
-        assert!(
-            problems
-                .iter()
-                .any(|(f, m)| *f == ConfigField::StagingDir && m.contains("absolute"))
-        );
-        assert!(
-            problems
-                .iter()
-                .any(|(f, m)| *f == ConfigField::ProfilesDir && m.contains("not a folder"))
-        );
+        env.config.samml_dir = file;
+        assert!(env.problems()[0].1.contains("not a folder"));
     }
 
     #[test]
-    fn the_three_folders_must_not_overlap() {
+    fn the_samml_and_game_folders_must_not_overlap() {
         let mut env = Env::new();
         let root = env.root.path().to_path_buf();
 
-        env.config.profiles_dir = env.config.staging_dir.clone();
-        assert!(env.problems()[0].1.contains("different folder"));
-
-        env.config.profiles_dir = root.join("staging/profiles");
-        assert!(env.problems()[0].1.contains("inside the staging folder"));
-
-        env.config.profiles_dir = root.join("profiles");
-        env.config.staging_dir = root.join("profiles/staging");
-        assert!(env.problems()[0].1.contains("inside the profiles folder"));
-
-        env.config.staging_dir = root.join("Game/staging");
-        let problems = env.problems();
+        env.config.samml_dir = root.join("Game/samml");
         assert_eq!(
-            problems[0],
-            (
-                ConfigField::StagingDir,
+            env.problems(),
+            [(
+                ConfigField::SammlDir,
                 "must not be inside the game folder".into()
-            )
+            )]
         );
 
-        env.config.staging_dir = root.to_path_buf();
+        env.config.samml_dir = env.config.game_dir.clone();
+        assert!(env.problems()[0].1.contains("inside the game folder"));
+
+        env.config.samml_dir = root;
         assert!(
             env.problems()
                 .iter()
                 .any(|(_, m)| m.contains("must not contain the game folder"))
         );
+    }
+
+    #[test]
+    fn staging_and_profiles_are_inside_the_samml_folder() {
+        let env = Env::new();
+        let samml = &env.config.samml_dir;
+        assert_eq!(env.config.staging_dir(), samml.join("staging"));
+        assert_eq!(env.config.profiles_dir(), samml.join("profiles"));
     }
 
     // --- status ---
@@ -370,10 +359,7 @@ mod tests {
         save_config(&file, &env.config).unwrap();
 
         assert!(matches!(config_status(&file), ConfigStatus::Ready { .. }));
-        assert_eq!(
-            load_config(&file).unwrap().staging_dir,
-            env.config.staging_dir
-        );
+        assert_eq!(load_config(&file).unwrap().samml_dir, env.config.samml_dir);
         let leftovers: Vec<_> = fs::read_dir(file.parent().unwrap()).unwrap().collect();
         assert_eq!(leftovers.len(), 1, "no temp file is left behind");
     }
@@ -393,11 +379,11 @@ mod tests {
     }
 
     #[test]
-    fn ensure_dirs_creates_staging_and_profiles() {
+    fn ensure_dirs_creates_the_samml_folder_with_staging_and_profiles() {
         let env = Env::new();
         ensure_dirs(&env.config).unwrap();
         ensure_dirs(&env.config).unwrap(); // harmless the second time
-        assert!(env.config.staging_dir.is_dir() && env.config.profiles_dir.is_dir());
+        assert!(env.config.staging_dir().is_dir() && env.config.profiles_dir().is_dir());
     }
 
     // --- first run ---
@@ -417,10 +403,7 @@ mod tests {
 
         assert_eq!(suggestion.game_dir.as_deref(), Some(game.as_path()));
         assert_eq!(suggestion.found_game_dirs, [game]);
-        assert_eq!(
-            suggestion.staging_dir,
-            home.path().join(".local/share/samml/staging")
-        );
+        assert_eq!(suggestion.samml_dir, home.path().join(".local/share/samml"));
         assert_eq!(suggestion.steam_app_id, 12120);
     }
 

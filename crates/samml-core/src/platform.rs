@@ -1,7 +1,6 @@
 //! Where things live on this Linux system, and finding the game.
 //!
-//! Owns the XDG locations SAMML uses (config file, default staging and
-//! profiles folders) and detecting GTA: San Andreas in Steam libraries.
+//! Owns the XDG locations SAMML uses (config file, default SAMML folder) and detecting GTA: San Andreas in Steam libraries.
 //! Pure path logic over a `PlatformDirs` value, so tests can use a fake
 //! home directory. Checking and saving the config is `config`.
 
@@ -61,12 +60,10 @@ impl PlatformDirs {
         self.config_home.join(APP_DIR).join(CONFIG_FILE)
     }
 
-    pub fn default_staging_dir(&self) -> PathBuf {
-        self.data_home.join(APP_DIR).join("staging")
-    }
-
-    pub fn default_profiles_dir(&self) -> PathBuf {
-        self.data_home.join(APP_DIR).join("profiles")
+    /// Where the library and profiles live unless the player chooses
+    /// otherwise.
+    pub fn default_samml_dir(&self) -> PathBuf {
+        self.data_home.join(APP_DIR)
     }
 }
 
@@ -179,12 +176,8 @@ mod tests {
             Path::new("/home/u/.config/samml/config.json")
         );
         assert_eq!(
-            dirs.default_staging_dir(),
-            Path::new("/home/u/.local/share/samml/staging")
-        );
-        assert_eq!(
-            dirs.default_profiles_dir(),
-            Path::new("/home/u/.local/share/samml/profiles")
+            dirs.default_samml_dir(),
+            Path::new("/home/u/.local/share/samml")
         );
     }
 
@@ -192,7 +185,7 @@ mod tests {
     fn absolute_xdg_variables_are_used_and_relative_ones_ignored() {
         let dirs = PlatformDirs::new("/home/u".into(), Some("/cfg".into()), Some("/data".into()));
         assert_eq!(dirs.config_file(), Path::new("/cfg/samml/config.json"));
-        assert_eq!(dirs.default_staging_dir(), Path::new("/data/samml/staging"));
+        assert_eq!(dirs.default_samml_dir(), Path::new("/data/samml"));
 
         let relative = PlatformDirs::new(
             "/home/u".into(),

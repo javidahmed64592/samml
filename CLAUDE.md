@@ -19,7 +19,7 @@ crates/samml-core/   all logic; no printing, no argument parsing
   manifest.rs        serde data types only (no behaviour)
   -- data and files
   config.rs          the app config: load, check, save, first-run status and suggestions
-  platform.rs        XDG locations (config file, default staging/profiles) and finding the game in Steam libraries
+  platform.rs        XDG locations (config file, default SAMML folder) and finding the game in Steam libraries
   library.rs         the mods in staging and the library file: ids, list, add, rename, set rules, delete
   profiles.rs        profile files: list, create, save, rename, duplicate, delete
   receipt.rs         read/write/remove the deploy receipt
@@ -58,7 +58,8 @@ Module dependencies run one way: helpers <- data/files <- operations. `library` 
 
 ## Concepts
 
-- **GAME_DIR / STAGING_DIR / PROFILES_DIR**: set in the config (`AppConfig`).
+- **GAME_DIR / SAMML_DIR**: set in the config (`AppConfig`).
+- **SAMML_DIR** holds everything the player owns: `staging/` (the mod library) and `profiles/`. `AppConfig::staging_dir()` and `profiles_dir()` derive them, so there is one setting to configure and one folder to zip for export/import. **STAGING_DIR** and **PROFILES_DIR** in these docs mean those two subfolders.
 - **Library**: STAGING_DIR is the mod library. Every visible folder directly inside it (flat, no nesting) is a mod, and the folder name is the mod's name. Dropping a folder in makes it available to every profile; it gets an id the next time the library is listed (`library::list_mods` / `sync_library`).
 - **Library file** (`STAGING_DIR/.samml_library.json`): the single source of truth for mods: `{ "mods": { "<id>": { "name", "files"? } } }`. Keeping it inside STAGING_DIR means zipping that folder backs up the whole library (a planned export/import feature, which will also bundle PROFILES_DIR).
 - **Mod id**: a slug of the name plus four random hex digits (`widescreen_fix-9906`), assigned once and never changed. It is what profiles refer to.
@@ -93,13 +94,13 @@ Placing files inside another mod's whole-folder link (e.g. `modloader/Ragdoll/..
 - **Deployed state** compares the receipt and the links on disk with the plan: `NotDeployed`, `OtherProfile`, `UpToDate`, or `OutOfDate` with the `missing` (to add), `stale` (to remove) and `changed` (wrong target) paths.
 Renaming a mod, adding or removing mods, changing rules or toggling a mod all show up as `OutOfDate`, which is how the UI knows to prompt for a redeploy.
 - **Config location**: `$XDG_CONFIG_HOME/samml/config.json` (default `~/.config/samml/config.json`).
-Default staging and profiles folders are `$XDG_DATA_HOME/samml/{staging,profiles}` (default `~/.local/share/samml/...`).
+The default SAMML folder is `$XDG_DATA_HOME/samml` (default `~/.local/share/samml`), holding `staging/` and `profiles/`.
 XDG variables are used only when absolute.
 The CLI uses the standard location, or an explicit path given as its first argument; there is no other lookup.
 - **Game detection** (`platform::find_game_dirs`) checks the native, `~/.steam` and Flatpak Steam roots plus every library listed in `libraryfolders.vdf` for `steamapps/common/Grand Theft Auto San Andreas` containing `gta-sa.exe` (any case).
 Installs reached two ways (symlinks) are reported once.
 - **Config validation** (`config::check_config`) returns a list of problems per field, in words the player can act on.
-The game folder must exist and contain `gta-sa.exe`; all three paths must be absolute; staging and profiles are created on demand, but if they exist they must be folders; the three folders must not overlap (staging must not contain profiles, since it would show up as a mod; neither may be inside or contain the game folder).
+The game folder must exist and contain `gta-sa.exe`; both paths must be absolute; the SAMML folder is created on demand (with `staging/` and `profiles/`), but if it exists it must be a folder; it must not be inside the game folder or contain it.
 - **Saving config** (`config::save_config`) refuses a config with problems and writes atomically, so a saved config is always one the app can start with.
 `config_status` tells the UI whether to show setup: `Missing` (first run), `Broken` (unreadable), `NeedsAttention` (parses but paths need fixing, e.g. the game moved; the existing values are kept for the form) or `Ready`.
 `suggest_config` gives the setup screen its starting values.
@@ -108,7 +109,7 @@ The game folder must exist and contain `gta-sa.exe`; all three paths must be abs
 ## Requirements
 
 **Setup**
-- R1. First run: pick or confirm the game directory; validate it; default the staging and profiles directories; store config in the platform config dir.
+- R1. First run: pick or confirm the game directory; validate it; default the SAMML directory; store config in the platform config dir.
 
 **Profiles**
 - R2. List, create (empty), rename, duplicate and delete profiles.
@@ -155,4 +156,4 @@ The game folder must exist and contain `gta-sa.exe`; all three paths must be abs
 5. Deploy bar: deploy, clean, launch, deployed-state indicator, conflict warnings.
 
 ### Phase D
-Export/import of the whole setup as one zip (staging + profiles), zip mod import, wiring `import_into_mod`'s progress callback to UI events, polish.
+Export/import of the whole setup as one zip (the SAMML folder), zip mod import, wiring `import_into_mod`'s progress callback to UI events, polish.

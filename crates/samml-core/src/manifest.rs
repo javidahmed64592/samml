@@ -9,8 +9,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub game_dir: PathBuf,
-    pub staging_dir: PathBuf,
-    pub profiles_dir: PathBuf,
+    /// The folder holding everything SAMML keeps for the player: the mod
+    /// library in `staging/` and the profiles in `profiles/`. Zipping this
+    /// one folder backs up the whole setup.
+    pub samml_dir: PathBuf,
     #[serde(default)]
     pub steam_app_id: Option<u32>,
 }
@@ -20,8 +22,7 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConfigField {
     GameDir,
-    StagingDir,
-    ProfilesDir,
+    SammlDir,
 }
 
 /// One thing wrong with the config, in words the player can act on.
@@ -58,8 +59,7 @@ pub struct ConfigSuggestion {
     pub game_dir: Option<PathBuf>,
     /// Every install found, in case there is more than one.
     pub found_game_dirs: Vec<PathBuf>,
-    pub staging_dir: PathBuf,
-    pub profiles_dir: PathBuf,
+    pub samml_dir: PathBuf,
     pub steam_app_id: u32,
 }
 
@@ -287,8 +287,7 @@ mod tests {
     fn parses_config() {
         let config: AppConfig = serde_json::from_str(APP_CONFIG).unwrap();
         assert!(!config.game_dir.as_os_str().is_empty());
-        assert!(!config.staging_dir.as_os_str().is_empty());
-        assert!(!config.profiles_dir.as_os_str().is_empty());
+        assert!(!config.samml_dir.as_os_str().is_empty());
         assert_eq!(config.steam_app_id, Some(12120));
     }
 
