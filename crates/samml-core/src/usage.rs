@@ -6,7 +6,7 @@
 //! anything here: profiles refer to mods by id, so a rename only changes
 //! the library (`library::rename_mod`).
 
-use crate::manifest::{AppManifest, Profile, ProfileInfo};
+use crate::manifest::{AppConfig, Profile, ProfileInfo};
 use crate::{library, profile_mods, profiles};
 use anyhow::{Result, bail};
 use std::path::Path;
@@ -31,7 +31,7 @@ pub fn profiles_using_mod(profiles_dir: &Path, id: &str) -> Result<Vec<ProfileIn
 /// returning those profiles. Profiles are updated first, so a failure never
 /// leaves a profile pointing at deleted files; if one cannot be written,
 /// nothing is deleted.
-pub fn delete_mod_everywhere(app: &AppManifest, id: &str) -> Result<Vec<ProfileInfo>> {
+pub fn delete_mod_everywhere(app: &AppConfig, id: &str) -> Result<Vec<ProfileInfo>> {
     // Fail before changing anything if the mod does not exist.
     library::entry(&library::load_library(&app.staging_dir)?, id)?;
 
@@ -74,7 +74,7 @@ mod tests {
     use tempfile::TempDir;
 
     struct Setup {
-        app: AppManifest,
+        app: AppConfig,
         a: String,
         b: String,
     }
@@ -82,7 +82,7 @@ mod tests {
     /// Two mods and three profiles: "One" uses A and B, "Two" uses B only,
     /// "Three" uses neither.
     fn setup(root: &TempDir) -> Setup {
-        let app = AppManifest {
+        let app = AppConfig {
             game_dir: root.path().join("game"),
             staging_dir: root.path().join("staging"),
             profiles_dir: root.path().join("profiles"),
@@ -103,7 +103,7 @@ mod tests {
         Setup { app, a, b }
     }
 
-    fn mod_ids(app: &AppManifest, slug: &str) -> Vec<String> {
+    fn mod_ids(app: &AppConfig, slug: &str) -> Vec<String> {
         profiles::find_profile_by_slug(&app.profiles_dir, slug)
             .unwrap()
             .unwrap()

@@ -6,7 +6,7 @@
 //! which links each mod needs comes from `links`.
 
 use crate::links::{self, MODLOADER_DIR};
-use crate::manifest::{AppManifest, DeployMod};
+use crate::manifest::{AppConfig, DeployMod};
 use crate::receipt::{self, Receipt};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -188,7 +188,7 @@ fn deploy_mod(
 
 /// Link every mod into `game_dir`, recording each change in `receipt`
 /// as it happens so a failure part-way still leaves a complete record.
-fn deploy_all(app: &AppManifest, mods: &[DeployMod], receipt: &mut Receipt) -> Result<()> {
+fn deploy_all(app: &AppConfig, mods: &[DeployMod], receipt: &mut Receipt) -> Result<()> {
     for m in mods {
         deploy_mod(m, &app.staging_dir, &app.game_dir, receipt)
             .with_context(|| format!("deploying mod '{}'", m.name))?;
@@ -202,7 +202,7 @@ fn deploy_all(app: &AppManifest, mods: &[DeployMod], receipt: &mut Receipt) -> R
 ///
 /// All-or-nothing: if any mod fails, everything already done is rolled
 /// back and the game directory is left as it was found.
-pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[DeployMod]) -> Result<()> {
+pub fn deploy(app: &AppConfig, profile_slug: &str, mods: &[DeployMod]) -> Result<()> {
     let game_dir = &app.game_dir;
 
     teardown(game_dir)?;
@@ -229,12 +229,12 @@ pub fn deploy(app: &AppManifest, profile_slug: &str, mods: &[DeployMod]) -> Resu
 
 /// Slug of the profile currently deployed to the game directory, or `None`
 /// if nothing is deployed.
-pub fn deployed_profile(app: &AppManifest) -> Result<Option<String>> {
+pub fn deployed_profile(app: &AppConfig) -> Result<Option<String>> {
     Ok(receipt::read(&app.game_dir)?.and_then(|r| r.profile))
 }
 
 /// Tear down to a clean vanilla state without deploying anything.
-pub fn clean(app: &AppManifest) -> Result<()> {
+pub fn clean(app: &AppConfig) -> Result<()> {
     teardown(&app.game_dir)
 }
 
@@ -247,7 +247,7 @@ mod tests {
 
     struct Env {
         _root: TempDir,
-        app: AppManifest,
+        app: AppConfig,
     }
 
     impl Env {
@@ -257,7 +257,7 @@ mod tests {
             let staging_dir = root.path().join("staging");
             fs::create_dir_all(&game_dir).unwrap();
             fs::create_dir_all(&staging_dir).unwrap();
-            let app = AppManifest {
+            let app = AppConfig {
                 game_dir,
                 staging_dir,
                 profiles_dir: root.path().join("profiles"),

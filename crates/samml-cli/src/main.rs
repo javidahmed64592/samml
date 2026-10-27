@@ -1,37 +1,53 @@
 use anyhow::{Context, Result, bail};
-use samml_core::manifest::DeployState;
+use samml_core::manifest::{ConfigStatus, DeployState};
+use samml_core::platform::PlatformDirs;
 use samml_core::{config, deploy, launch, library, manifest, plan, profiles, resolve};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
-    // samml [app_manifest.json] clean
-    // samml [app_manifest.json] list
-    // samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>
-    let (manifest_path, command, profile_slug) = match args.len() {
-        2 if matches!(args[1].as_str(), "clean" | "list" | "mods") => {
-            (PathBuf::from("app_manifest.json"), args[1].clone(), None)
+    // samml [config.json] init [game_dir]
+    // samml [config.json] clean
+    // samml [config.json] list
+    // samml [config.json] mods
+    // samml [config.json] <show|deploy|launch|run> <profile_slug>
+    let (config_path, command, argument) = match args.len() {
+        2 if matches!(args[1].as_str(), "init" | "clean" | "list" | "mods") => {
+            (None, args[1].clone(), None)
         }
-        3 if matches!(args[2].as_str(), "clean" | "list" | "mods") => {
-            (PathBuf::from(&args[1]), args[2].clone(), None)
+        3 if matches!(args[2].as_str(), "init" | "clean" | "list" | "mods") => {
+            (Some(PathBuf::from(&args[1])), args[2].clone(), None)
         }
-        3 => (
-            PathBuf::from("app_manifest.json"),
-            args[1].clone(),
-            Some(args[2].clone()),
-        ),
+        3 => (None, args[1].clone(), Some(args[2].clone())),
         4 => (
-            PathBuf::from(&args[1]),
+            Some(PathBuf::from(&args[1])),
             args[2].clone(),
             Some(args[3].clone()),
         ),
         _ => bail!(
-            "usage: samml [app_manifest.json] <show|deploy|launch|run> <profile_slug>\n       samml [app_manifest.json] new <profile name>\n       samml [app_manifest.json] list\n       samml [app_manifest.json] mods\n       samml [app_manifest.json] clean"
+            "usage: samml [config.json] init [game_dir]\n       samml [config.json] <show|deploy|launch|run> <profile_slug>\n       samml [config.json] new <profile name>\n       samml [config.json] list\n       samml [config.json] mods\n       samml [config.json] clean"
         ),
     };
+    let profile_slug = argument;
 
-    let app = config::load_app_manifest(&manifest_path)?;
+    let dirs = PlatformDirs::from_env()?;
+    if command == "init" {
+        return init(
+            &config_path.unwrap_or_else(|| dirs.config_file()),
+            profile_slug.as_deref(),
+            &dirs,
+        );
+    }
+    let config_path = config_path.unwrap_or_else(|| dirs.config_file());
+    if !config_path.exists() {
+        bail!(
+            "no config found at {}; run `samml init` to set up",
+            config_path.display()
+        );
+    }
+
+    let app = config::load_config(&config_path)?;
 
     match command.as_str() {
         "show" | "deploy" | "launch" | "run" => {
@@ -74,7 +90,7 @@ fn main() -> Result<()> {
         "new" => {
             let name = profile_slug
                 .as_deref()
-                .context("usage: samml [app_manifest.json] new <profile name>")?;
+                .context("usage: samml [config.json] new <profile name>")?;
             let (slug, path) = profiles::create_profile(&app.profiles_dir, name)?;
             println!("Created profile '{name}' ({slug}) at {}", path.display());
         }
@@ -111,14 +127,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+fn deploy(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
     let mods = resolve::resolve_profile(&app.staging_dir, profile)?;
     deploy::deploy(app, slug, &mods)?;
     println!("Deployed.");
     Ok(())
 }
 
-fn launch(app: &manifest::AppManifest) -> Result<()> {
+fn launch(app: &manifest::AppConfig) -> Result<()> {
     launch::launch(app)?;
     println!(
         "Launched Steam App ID {}.",
@@ -127,7 +143,7 @@ fn launch(app: &manifest::AppManifest) -> Result<()> {
     Ok(())
 }
 
-fn print_plan(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profile) -> Result<()> {
+fn print_plan(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
     let plan = plan::plan_deploy(app, slug, profile)?;
     let links: usize = plan
         .mods
@@ -167,5 +183,41 @@ fn print_plan(app: &manifest::AppManifest, slug: &str, profile: &manifest::Profi
     if !plan.can_deploy {
         println!("  Cannot deploy until the problems above are fixed.");
     }
+    Ok(())
+}
+
+/// First-run setup: find the game (or take it from the command line), pick
+/// the standard folders, and save the config. If a config exists but its
+/// paths no longer work (e.g. the game moved), only the game folder is
+/// replaced.
+fn init(path: &Path, game_dir: Option<&str>, dirs: &PlatformDirs) -> Result<()> {
+    let suggestion = config::suggest_config(dirs);
+    let (staging_dir, profiles_dir) = match config::config_status(path) {
+        ConfigStatus::Ready { .. } => {
+            println!("Already set up: {}", path.display());
+            return Ok(());
+        }
+        ConfigStatus::Broken { reason } => bail!("{reason}"),
+        ConfigStatus::NeedsAttention { config, .. } => (config.staging_dir, config.profiles_dir),
+        ConfigStatus::Missing => (suggestion.staging_dir, suggestion.profiles_dir),
+    };
+    let game_dir = match game_dir {
+        Some(dir) => PathBuf::from(dir),
+        None => suggestion.game_dir.context(
+            "could not find GTA San Andreas in any Steam library; run `samml init <game folder>`",
+        )?,
+    };
+    let new_config = manifest::AppConfig {
+        game_dir,
+        staging_dir,
+        profiles_dir,
+        steam_app_id: Some(suggestion.steam_app_id),
+    };
+    config::save_config(path, &new_config)?;
+    config::ensure_dirs(&new_config)?;
+    println!("Saved {}", path.display());
+    println!("  game:     {}", new_config.game_dir.display());
+    println!("  staging:  {}", new_config.staging_dir.display());
+    println!("  profiles: {}", new_config.profiles_dir.display());
     Ok(())
 }
