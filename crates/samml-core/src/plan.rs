@@ -64,7 +64,7 @@ fn describe_links(
             PlannedLink {
                 replaces_game_file: replaces_game_file(&app.game_dir, &path, receipt),
                 path,
-                source: relative(&app.staging_dir, &target),
+                source: relative(&app.staging_dir(), &target),
             }
         })
         .collect()
@@ -90,7 +90,7 @@ fn plan_mod(
     let Some(m) = rules else {
         return planned(Vec::new(), Some("it is not in the library".to_string()));
     };
-    match links::mod_links(m, &app.staging_dir, &app.game_dir) {
+    match links::mod_links(m, &app.staging_dir(), &app.game_dir) {
         Ok(pairs) => planned(describe_links(pairs, app, receipt), None),
         Err(err) => planned(Vec::new(), Some(format!("{err:#}"))),
     }
@@ -168,7 +168,7 @@ fn deploy_state(
     let mut order = Vec::new();
     for link in mods.iter().filter(|m| m.active).flat_map(|m| &m.links) {
         if wanted
-            .insert(&link.path, app.staging_dir.join(&link.source))
+            .insert(&link.path, app.staging_dir().join(&link.source))
             .is_none()
         {
             order.push(link.path.as_str());
@@ -199,8 +199,8 @@ fn deploy_state(
 
 /// What deploying `profile` (whose slug is `profile_slug`) would do.
 pub fn plan_deploy(app: &AppConfig, profile_slug: &str, profile: &Profile) -> Result<DeployPlan> {
-    let views = resolve::describe_profile(&app.staging_dir, profile)?;
-    let library = library::load_library(&app.staging_dir)?;
+    let views = resolve::describe_profile(&app.staging_dir(), profile)?;
+    let library = library::load_library(&app.staging_dir())?;
     let receipt = receipt::read(&app.game_dir)?;
 
     let mut mods: Vec<PlannedMod> = views
@@ -259,8 +259,7 @@ mod tests {
             let root = TempDir::new().unwrap();
             let app = AppConfig {
                 game_dir: root.path().join("game"),
-                staging_dir: root.path().join("staging"),
-                profiles_dir: root.path().join("profiles"),
+                samml_dir: root.path().join("samml"),
                 steam_app_id: None,
             };
             fs::create_dir_all(&app.game_dir).unwrap();
@@ -277,7 +276,7 @@ mod tests {
         /// Adds a mod to the library (with the given files, each holding
         /// its own path as contents) and to the profile. Returns its id.
         fn add(&mut self, name: &str, files: &[&str], rules: Option<Vec<FileRule>>) -> String {
-            let (id, dir) = library::add_mod(&self.app.staging_dir, name, rules).unwrap();
+            let (id, dir) = library::add_mod(&self.app.staging_dir(), name, rules).unwrap();
             for f in files {
                 let path = dir.join(f);
                 fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -304,7 +303,7 @@ mod tests {
         }
 
         fn deploy(&self) {
-            let mods = resolve::resolve_profile(&self.app.staging_dir, &self.profile).unwrap();
+            let mods = resolve::resolve_profile(&self.app.staging_dir(), &self.profile).unwrap();
             deploy::deploy(&self.app, "p", &mods).unwrap();
         }
 
@@ -522,16 +521,16 @@ mod tests {
         env.add_modloader();
         let bad = env.add("BadRule", &["a"], None);
         // a hand-edited library can hold rules the app would have refused
-        let mut lib = library::load_library(&env.app.staging_dir).unwrap();
+        let mut lib = library::load_library(&env.app.staging_dir()).unwrap();
         lib.mods.get_mut(&bad).unwrap().files = Some(vec![rule("a", "../../evil")]);
         fs::write(
-            env.app.staging_dir.join(library::LIBRARY_FILE),
+            env.app.staging_dir().join(library::LIBRARY_FILE),
             serde_json::to_string(&lib).unwrap(),
         )
         .unwrap();
         env.add("NoSource", &["a"], Some(vec![rule("missing.txt", "x")]));
         let gone = env.add("Gone", &["a"], None);
-        fs::remove_dir_all(env.app.staging_dir.join("Gone")).unwrap();
+        fs::remove_dir_all(env.app.staging_dir().join("Gone")).unwrap();
         profile_mods::add_mod(&mut env.profile, "unknown-0000").unwrap();
         env.add("Fine", &["a"], None);
 
@@ -610,7 +609,7 @@ mod tests {
         let id = env.add("Old Name", &["f"], None);
         env.deploy();
 
-        library::rename_mod(&env.app.staging_dir, &id, "New Name").unwrap();
+        library::rename_mod(&env.app.staging_dir(), &id, "New Name").unwrap();
         let plan = env.plan();
 
         assert_eq!(
@@ -641,7 +640,7 @@ mod tests {
 
         env.deploy();
         library::set_mod_files(
-            &env.app.staging_dir,
+            &env.app.staging_dir(),
             &a,
             Some(vec![rule("a.txt", "moved.txt")]),
         )
@@ -669,7 +668,7 @@ mod tests {
         env.deploy();
         let link = env.app.game_dir.join("a.txt");
         fs::remove_file(&link).unwrap();
-        symlink(env.app.staging_dir.join("M"), &link).unwrap();
+        symlink(env.app.staging_dir().join("M"), &link).unwrap();
 
         let DeployState::OutOfDate(drift) = env.plan().state else {
             panic!("a redirected link should be drift");

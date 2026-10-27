@@ -190,7 +190,7 @@ fn deploy_mod(
 /// as it happens so a failure part-way still leaves a complete record.
 fn deploy_all(app: &AppConfig, mods: &[DeployMod], receipt: &mut Receipt) -> Result<()> {
     for m in mods {
-        deploy_mod(m, &app.staging_dir, &app.game_dir, receipt)
+        deploy_mod(m, &app.staging_dir(), &app.game_dir, receipt)
             .with_context(|| format!("deploying mod '{}'", m.name))?;
     }
     Ok(())
@@ -254,15 +254,13 @@ mod tests {
         fn new() -> Self {
             let root = TempDir::new().unwrap();
             let game_dir = root.path().join("game");
-            let staging_dir = root.path().join("staging");
-            fs::create_dir_all(&game_dir).unwrap();
-            fs::create_dir_all(&staging_dir).unwrap();
             let app = AppConfig {
                 game_dir,
-                staging_dir,
-                profiles_dir: root.path().join("profiles"),
+                samml_dir: root.path().join("samml"),
                 steam_app_id: None,
             };
+            fs::create_dir_all(&app.game_dir).unwrap();
+            fs::create_dir_all(app.staging_dir()).unwrap();
             Env { _root: root, app }
         }
 
@@ -273,7 +271,7 @@ mod tests {
         /// Creates a file in staging, e.g. `stage("Mod/a.txt", ..)` is the
         /// file `a.txt` in the mod called `Mod`.
         fn stage(&self, rel: &str, contents: &str) {
-            let path = self.app.staging_dir.join(rel);
+            let path = self.app.staging_dir().join(rel);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, contents).unwrap();
         }
@@ -438,7 +436,7 @@ mod tests {
             "pre-existing dirs stay"
         );
         // staging is untouched
-        assert!(env.app.staging_dir.join("M/a.txt").is_file());
+        assert!(env.app.staging_dir().join("M/a.txt").is_file());
     }
 
     #[test]
@@ -547,7 +545,7 @@ mod tests {
         let env = Env::new();
         env.stage("M/a.txt", "a");
         env.stage("Modloader/modloader/modloader.asi", "loader");
-        fs::write(env.app.staging_dir.join("outside.txt"), "x").unwrap();
+        fs::write(env.app.staging_dir().join("outside.txt"), "x").unwrap();
 
         let bad_name = plain_mod("../escape");
         let err = deploy(&env.app, "p", &[modloader(), bad_name]).unwrap_err();

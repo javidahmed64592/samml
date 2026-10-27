@@ -53,10 +53,10 @@ fn main() -> Result<()> {
         "show" | "deploy" | "launch" | "run" => {
             let slug = profile_slug.as_deref().unwrap();
             let profile =
-                profiles::find_profile_by_slug(&app.profiles_dir, slug)?.with_context(|| {
+                profiles::find_profile_by_slug(&app.profiles_dir(), slug)?.with_context(|| {
                     format!(
                         "profile '{slug}' not found in {}",
-                        app.profiles_dir.display()
+                        app.profiles_dir().display()
                     )
                 })?;
 
@@ -65,7 +65,7 @@ fn main() -> Result<()> {
                 profile.name,
                 profile.mods.len()
             );
-            for m in resolve::describe_profile(&app.staging_dir, &profile)? {
+            for m in resolve::describe_profile(&app.staging_dir(), &profile)? {
                 println!(
                     "  [{}] {}{}",
                     if m.active { "x" } else { " " },
@@ -91,22 +91,22 @@ fn main() -> Result<()> {
             let name = profile_slug
                 .as_deref()
                 .context("usage: samml [config.json] new <profile name>")?;
-            let (slug, path) = profiles::create_profile(&app.profiles_dir, name)?;
+            let (slug, path) = profiles::create_profile(&app.profiles_dir(), name)?;
             println!("Created profile '{name}' ({slug}) at {}", path.display());
         }
         "list" => {
-            let profiles = profiles::list_profiles(&app.profiles_dir)?;
+            let profiles = profiles::list_profiles(&app.profiles_dir())?;
             if profiles.is_empty() {
-                println!("No profiles found in {}", app.profiles_dir.display());
+                println!("No profiles found in {}", app.profiles_dir().display());
             }
             for p in profiles {
                 println!("{} - {}", p.slug, p.name);
             }
         }
         "mods" => {
-            let mods = library::list_mods(&app.staging_dir)?;
+            let mods = library::list_mods(&app.staging_dir())?;
             if mods.is_empty() {
-                println!("No mods found in {}", app.staging_dir.display());
+                println!("No mods found in {}", app.staging_dir().display());
             }
             for m in mods {
                 let note = match (&m.problem, &m.files) {
@@ -128,7 +128,7 @@ fn main() -> Result<()> {
 }
 
 fn deploy(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
-    let mods = resolve::resolve_profile(&app.staging_dir, profile)?;
+    let mods = resolve::resolve_profile(&app.staging_dir(), profile)?;
     deploy::deploy(app, slug, &mods)?;
     println!("Deployed.");
     Ok(())
@@ -192,14 +192,14 @@ fn print_plan(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile
 /// replaced.
 fn init(path: &Path, game_dir: Option<&str>, dirs: &PlatformDirs) -> Result<()> {
     let suggestion = config::suggest_config(dirs);
-    let (staging_dir, profiles_dir) = match config::config_status(path) {
+    let samml_dir = match config::config_status(path) {
         ConfigStatus::Ready { .. } => {
             println!("Already set up: {}", path.display());
             return Ok(());
         }
         ConfigStatus::Broken { reason } => bail!("{reason}"),
-        ConfigStatus::NeedsAttention { config, .. } => (config.staging_dir, config.profiles_dir),
-        ConfigStatus::Missing => (suggestion.staging_dir, suggestion.profiles_dir),
+        ConfigStatus::NeedsAttention { config, .. } => config.samml_dir,
+        ConfigStatus::Missing => suggestion.samml_dir,
     };
     let game_dir = match game_dir {
         Some(dir) => PathBuf::from(dir),
@@ -209,15 +209,14 @@ fn init(path: &Path, game_dir: Option<&str>, dirs: &PlatformDirs) -> Result<()> 
     };
     let new_config = manifest::AppConfig {
         game_dir,
-        staging_dir,
-        profiles_dir,
+        samml_dir,
         steam_app_id: Some(suggestion.steam_app_id),
     };
     config::save_config(path, &new_config)?;
     config::ensure_dirs(&new_config)?;
     println!("Saved {}", path.display());
     println!("  game:     {}", new_config.game_dir.display());
-    println!("  staging:  {}", new_config.staging_dir.display());
-    println!("  profiles: {}", new_config.profiles_dir.display());
+    println!("  samml:    {}", new_config.samml_dir.display());
+    println!("            (mods in staging/, profiles in profiles/)");
     Ok(())
 }

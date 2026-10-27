@@ -14,37 +14,34 @@ A mod manager for Grand Theft Auto: San Andreas (v1.0 on Steam) on Linux, built 
 In this guide, we will use the following variables for file paths:
 
 - `${GAME_DIR}`: The root directory of the Grand Theft Auto: San Andreas game installation. This directory should contain the game executable.
-- `${STAGING_DIR}`: Your mod library. Every folder directly inside it is a mod.
-- `${PROFILES_DIR}`: The directory where mod profiles for the mod manager are stored.
+- `${SAMML_DIR}`: The one folder SAMML keeps everything in. It holds the two folders below, so zipping `${SAMML_DIR}` backs up your whole setup.
+- `${STAGING_DIR}`: `${SAMML_DIR}/staging`, your mod library. Every folder directly inside it is a mod.
+- `${PROFILES_DIR}`: `${SAMML_DIR}/profiles`, where mod profiles are stored.
 
 ## Setting Up
 
 Run `samml init` once.
-It looks for GTA: San Andreas in your Steam libraries (including extra library folders and the Flatpak install), then saves the config to `~/.config/samml/config.json` and creates the default folders:
-
-- `${STAGING_DIR}`: `~/.local/share/samml/staging`
-- `${PROFILES_DIR}`: `~/.local/share/samml/profiles`
-
+It looks for GTA: San Andreas in your Steam libraries (including extra library folders and the Flatpak install), then saves the config to `~/.config/samml/config.json` and creates `${SAMML_DIR}` at `~/.local/share/samml`, with its `staging` and `profiles` folders.
 (`$XDG_CONFIG_HOME` and `$XDG_DATA_HOME` are respected.)
 If the game is not found, point it at the game folder: `samml init "/path/to/Grand Theft Auto San Andreas"`.
 The game folder must contain `gta-sa.exe`.
 
 ## Config
 
-The config is a JSON file that defines the game directory, staging directory, and the profiles directory.
+The config is a JSON file with the game directory and the SAMML directory.
 `samml init` creates it at `~/.config/samml/config.json`; a different file can be named as the first argument of any command.
 `config.example.json` shows the format:
 
 ```json
 {
   "game_dir": "/path/to/steamapps/common/Grand Theft Auto San Andreas/",
-  "staging_dir": "/path/to/samml/staging/",
-  "profiles_dir": "/path/to/samml/profiles/",
+  "samml_dir": "/path/to/samml/",
   "steam_app_id": 12120
 }
 ```
 
-All three paths must be absolute, and the staging and profiles folders must not overlap each other or the game folder.
+Both paths must be absolute, and the SAMML folder must not be inside the game folder or contain it.
+To move your mods and profiles, move `${SAMML_DIR}` and change `samml_dir`.
 
 ## Mods
 
