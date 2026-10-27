@@ -1,7 +1,8 @@
 use anyhow::{Context, Result, bail};
-use samml_core::manifest::{ConfigStatus, DeployState};
+use samml_core::config;
+use samml_core::manager::Manager;
+use samml_core::manifest::{self, ConfigStatus, DeployPlan, DeployState, ProfileView};
 use samml_core::platform::PlatformDirs;
-use samml_core::{config, deploy, launch, library, manifest, plan, profiles, resolve};
 use std::path::{Path, PathBuf};
 
 fn main() -> Result<()> {
@@ -47,42 +48,25 @@ fn main() -> Result<()> {
         );
     }
 
-    let app = config::load_config(&config_path)?;
+    let manager = Manager::open(&config_path).with_context(|| {
+        format!(
+            "could not open {}; fix it, or run `samml init` to set up again",
+            config_path.display()
+        )
+    })?;
 
     match command.as_str() {
         "show" | "deploy" | "launch" | "run" => {
             let slug = profile_slug.as_deref().unwrap();
-            let profile =
-                profiles::find_profile_by_slug(&app.profiles_dir(), slug)?.with_context(|| {
-                    format!(
-                        "profile '{slug}' not found in {}",
-                        app.profiles_dir().display()
-                    )
-                })?;
-
-            println!(
-                "Profile '{}' ({slug}) - {} mod(s):",
-                profile.name,
-                profile.mods.len()
-            );
-            for m in resolve::describe_profile(&app.staging_dir(), &profile)? {
-                println!(
-                    "  [{}] {}{}",
-                    if m.active { "x" } else { " " },
-                    m.name.as_deref().unwrap_or(&m.id),
-                    m.problem
-                        .map(|p| format!("  (PROBLEM: {p})"))
-                        .unwrap_or_default()
-                );
-            }
+            print_profile(&manager.profile(slug)?);
 
             match command.as_str() {
-                "show" => print_plan(&app, slug, &profile)?,
-                "deploy" => deploy(&app, slug, &profile)?,
-                "launch" => launch(&app)?,
+                "show" => print_plan(&manager.plan(slug)?),
+                "deploy" => deploy(&manager, slug)?,
+                "launch" => launch(&manager)?,
                 "run" => {
-                    deploy(&app, slug, &profile)?;
-                    launch(&app)?;
+                    deploy(&manager, slug)?;
+                    launch(&manager)?;
                 }
                 _ => unreachable!(),
             }
@@ -91,22 +75,28 @@ fn main() -> Result<()> {
             let name = profile_slug
                 .as_deref()
                 .context("usage: samml [config.json] new <profile name>")?;
-            let (slug, path) = profiles::create_profile(&app.profiles_dir(), name)?;
-            println!("Created profile '{name}' ({slug}) at {}", path.display());
+            let profile = manager.create_profile(name)?;
+            println!("Created profile '{}' ({})", profile.name, profile.slug);
         }
         "list" => {
-            let profiles = profiles::list_profiles(&app.profiles_dir())?;
+            let profiles = manager.list_profiles()?;
             if profiles.is_empty() {
-                println!("No profiles found in {}", app.profiles_dir().display());
+                println!(
+                    "No profiles found in {}",
+                    manager.config().profiles_dir().display()
+                );
             }
             for p in profiles {
                 println!("{} - {}", p.slug, p.name);
             }
         }
         "mods" => {
-            let mods = library::list_mods(&app.staging_dir())?;
+            let mods = manager.list_mods()?;
             if mods.is_empty() {
-                println!("No mods found in {}", app.staging_dir().display());
+                println!(
+                    "No mods found in {}",
+                    manager.config().staging_dir().display()
+                );
             }
             for m in mods {
                 let note = match (&m.problem, &m.files) {
@@ -118,7 +108,7 @@ fn main() -> Result<()> {
             }
         }
         "clean" => {
-            deploy::clean(&app)?;
+            manager.clean()?;
             println!("Restored to vanilla.");
         }
         other => bail!("unknown command: {other}"),
@@ -127,24 +117,42 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn deploy(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
-    let mods = resolve::resolve_profile(&app.staging_dir(), profile)?;
-    deploy::deploy(app, slug, &mods)?;
+fn deploy(manager: &Manager, slug: &str) -> Result<()> {
+    manager.deploy(slug)?;
     println!("Deployed.");
     Ok(())
 }
 
-fn launch(app: &manifest::AppConfig) -> Result<()> {
-    launch::launch(app)?;
+fn launch(manager: &Manager) -> Result<()> {
+    manager.launch()?;
     println!(
         "Launched Steam App ID {}.",
-        app.steam_app_id.unwrap_or_default()
+        manager.config().steam_app_id.unwrap_or_default()
     );
     Ok(())
 }
 
-fn print_plan(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile) -> Result<()> {
-    let plan = plan::plan_deploy(app, slug, profile)?;
+fn print_profile(profile: &ProfileView) {
+    println!(
+        "Profile '{}' ({}) - {} mod(s):",
+        profile.name,
+        profile.slug,
+        profile.mods.len()
+    );
+    for m in &profile.mods {
+        println!(
+            "  [{}] {}{}",
+            if m.active { "x" } else { " " },
+            m.name.as_deref().unwrap_or(&m.id),
+            m.problem
+                .as_ref()
+                .map(|p| format!("  (PROBLEM: {p})"))
+                .unwrap_or_default()
+        );
+    }
+}
+
+fn print_plan(plan: &DeployPlan) {
     let links: usize = plan
         .mods
         .iter()
@@ -183,7 +191,6 @@ fn print_plan(app: &manifest::AppConfig, slug: &str, profile: &manifest::Profile
     if !plan.can_deploy {
         println!("  Cannot deploy until the problems above are fixed.");
     }
-    Ok(())
 }
 
 /// First-run setup: find the game (or take it from the command line), pick
