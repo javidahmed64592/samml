@@ -16,6 +16,7 @@ Players never open mod folders, the config file or profile files themselves.
 ```
 crates/samml-core/   all logic; no printing, no argument parsing
   lib.rs             module list only
+  manager.rs         the facade: every player action as one method; what the CLI and the UI call
   manifest.rs        serde data types only (no behaviour)
   -- data and files
   config.rs          the app config: load, check, save, first-run status and suggestions
@@ -37,13 +38,13 @@ crates/samml-core/   all logic; no printing, no argument parsing
   rules.rs           validate deploy rules
   paths.rs           validate/join user-supplied relative paths
   slug.rs            display name -> filename-safe handle, uniqueness
-crates/samml-cli/    thin wrapper: parses args, calls core, prints
-src-tauri/           (planned) Tauri commands, one-line calls into core
+crates/samml-cli/    thin wrapper: parses args, calls `Manager`, prints (`init` uses `config`/`platform` directly, since no config exists yet)
+src-tauri/           (planned) Tauri commands, one-line calls into `Manager`
 ui/                  (planned) Leptos frontend compiled to WASM with Trunk
 tests/               fixtures shared by tests (config.json, profiles/, library/)
 ```
 
-Module dependencies run one way: helpers <- data/files <- operations. `library` and `profile_mods` do not know about each other; `usage` and `resolve` are where they meet.
+Module dependencies run one way: helpers <- data/files <- operations <- `manager`. `library` and `profile_mods` do not know about each other; `usage` and `resolve` are where they meet.
 
 ### Conventions
 
@@ -104,6 +105,16 @@ The game folder must exist and contain `gta-sa.exe`; both paths must be absolute
 - **Saving config** (`config::save_config`) refuses a config with problems and writes atomically, so a saved config is always one the app can start with.
 `config_status` tells the UI whether to show setup: `Missing` (first run), `Broken` (unreadable), `NeedsAttention` (parses but paths need fixing, e.g. the game moved; the existing values are kept for the form) or `Ready`.
 `suggest_config` gives the setup screen its starting values.
+- **Manager** (`manager::Manager`) is the single entry point for player actions, so a Tauri command is a one-line call and the CLI only parses arguments and prints.
+Setup happens before a manager exists (`config::config_status`, `suggest_config`, `save_config`); then `Manager::open(config_path)` refuses an unusable config and creates the SAMML folder.
+Methods are grouped as profiles, library, and deploying; they compose the modules and add no rules of their own.
+Compound actions live here: `create_mod` adds the mod and imports its files, and removes the mod again if the import fails; profile edits load, edit and save a profile; `add_mod_to_profile` only accepts mods that are in the library.
+- **Locking**: everything that changes the library, a profile or the game directory runs under one lock in `Manager`, so two UI actions at once (e.g. adding two mods to the same profile) cannot overwrite each other.
+Reads are not locked; `import_into_mod` is not locked either, so a long copy never freezes the app.
+`Manager` is `Send + Sync`, so Tauri can hold it as shared state.
+- **Deleting or renaming never touches the game directory.**
+Deleting the deployed profile leaves it deployed (`Manager::deployed` reports its slug with no name) until `clean` or the next deploy.
+Deleting or renaming a deployed mod leaves dangling or old links that the plan reports as `OutOfDate`; redeploying (which tears down first) clears them.
 - **Archives**: not in scope for now. Zip import comes after the core UI; `.7z` and `.rar` later, if at all.
 
 ## Requirements
@@ -143,7 +154,7 @@ The game folder must exist and contain `gta-sa.exe`; both paths must be absolute
 5. ~~Importing files into a mod folder (copy from native paths) and listing a mod's files for the rule picker.~~ Done (`import.rs`, `browse.rs`).
 6. ~~`plan_deploy`: each mod's resolved link paths, plus conflicts; deployed-state check against the receipt (including a rename since the last deploy).~~ Done (`plan.rs`, `links.rs`).
 7. ~~Config: load, save, validate, platform config dir.~~ Done (`config.rs`, `platform.rs`).
-8. `Manager` facade struct over the above so each Tauri command is a one-liner.
+8. ~~`Manager` facade struct over the above so each Tauri command is a one-liner.~~ Done (`manager.rs`; the CLI now uses it).
 
 ### Phase B - scaffold
 `src-tauri/` and `ui/` (Leptos + Trunk) as workspace members; CI gains `webkit2gtk` and the `wasm32-unknown-unknown` target. First screen: the profile list.

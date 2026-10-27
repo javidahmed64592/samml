@@ -1,6 +1,9 @@
 //! SAMML core: everything the CLI and the GUI do, with no printing and no
 //! argument parsing.
 //!
+//! Entry point
+//! - `manager`: every player action as one method; what the CLI and UI call
+//!
 //! Data and files
 //! - `manifest`: data types (app config, library, profiles)
 //! - `config`: the app config: load, check, save, first-run status
@@ -32,6 +35,7 @@ pub mod import;
 pub mod launch;
 pub mod library;
 pub mod links;
+pub mod manager;
 pub mod manifest;
 pub mod paths;
 pub mod plan;

@@ -63,6 +63,26 @@ pub struct ConfigSuggestion {
     pub steam_app_id: u32,
 }
 
+// What the UI asks the manager for.
+
+/// A profile with its entries described (names, problems), for the profile
+/// screen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProfileView {
+    pub slug: String,
+    pub name: String,
+    pub mods: Vec<ProfileModView>,
+}
+
+/// The profile currently deployed to the game directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeployedInfo {
+    pub slug: String,
+    /// `None` if the profile has since been deleted; the deployment is still
+    /// in the game directory until `clean` or the next deploy.
+    pub name: Option<String>,
+}
+
 // Mod library: every folder in STAGING_DIR is a mod, named after its folder.
 // Each mod has a stable id; profiles refer to mods by id, so renaming a mod
 // (and its folder) only changes the library.
